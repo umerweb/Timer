@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Environment variables
+.env
+.env.test
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Build and Cache
+dist/
+build/
+.cache/
+.next/
+
+# IDE/System files
+.DS_Store
+.vscode/
+.idea/
