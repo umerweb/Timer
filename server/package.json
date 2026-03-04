@@ -4,7 +4,7 @@
   "description": "Countdown timer server — generates animated GIFs on demand",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node server.js",
     "dev": "nodemon index.js"
   },
   "dependencies": {
