@@ -1,0 +1,36 @@
+const express      = require("express");
+const cors         = require("cors");
+const cookieParser = require("cookie-parser");
+require("dotenv").config();
+
+const authRoutes  = require("./routes/auth");
+const timerRoutes = require("./routes/timer");
+const timersRoutes = require("./routes/timers"); 
+
+const app  = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors({
+  origin: process.env.FRONT_URL,
+  credentials: true
+}));
+
+app.use(express.json());
+app.use(cookieParser());
+
+/* ─── routes ─────────────────────────────────────────────────────────────── */
+app.use("/api/auth",  authRoutes);
+app.use("/api/timer", timerRoutes);
+app.use("/api/timers", timersRoutes);
+
+/* ─── health ─────────────────────────────────────────────────────────────── */
+app.get("/health", (_, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+/* ─── start ──────────────────────────────────────────────────────────────── */
+app.listen(PORT, () => {
+  console.log(`\n✅ Server running on port ${PORT}`);
+  console.log(`  Auth:    /api/auth`);
+  console.log(`  GIF:     /api/timer/gif?target=2025-12-31T23:59:59`);
+  console.log(`  Embed:   /api/timer/embed?target=2025-12-31T23:59:59`);
+  console.log(`  Preview: /api/timer/preview?target=2025-12-31T23:59:59`);
+});
