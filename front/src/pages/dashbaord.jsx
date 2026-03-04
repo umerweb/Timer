@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 
-const API =  "http://localhost:5000";
+const API =  "https://timer-server-moyt.onrender.com";
 
 const authHeaders = () => ({
   "Content-Type": "application/json",
