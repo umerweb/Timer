@@ -309,7 +309,7 @@ function Header({ user, serverOnline, onLogout, children }) {
     <div className="bg-[var(--color-panel)] border-b border-[var(--color-border)] px-5 py-2.5 flex items-center gap-3 flex-shrink-0 shadow-[0_1px_4px_rgba(0,0,0,.06)]">
       <div className="w-8 h-8 rounded-lg text-base bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center">⏳</div>
       <div>
-        <div className="font-bold text-sm">CountTimer Pro</div>
+        <div className="font-bold text-sm">Timerly</div>
         <div className="text-[10px] text-[var(--color-faint)]">All-in-one countdown generator</div>
       </div>
       <div className="ml-auto flex items-center gap-2 flex-wrap">

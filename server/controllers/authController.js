@@ -2,6 +2,8 @@ const pool = require("../db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
+const { sendOtpEmail } = require("./mailer");
+
 require("dotenv").config();
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -52,6 +54,7 @@ exports.register = async (req, res) => {
   );
 
   console.log("OTP:", otp); // replace with email sender
+  await sendOtpEmail(email, otp, "email_verify");
 
   res.json({ message: "User registered. Verify OTP." });
 };

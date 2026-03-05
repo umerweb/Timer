@@ -3,235 +3,239 @@ import axios from "axios";
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
-//const API = "https://timer-server-moyt.onrender.com/api/auth";
-const API = import.meta.env.VITE_BACKEND_URL+'/api/auth';
+const API = import.meta.env.VITE_BACKEND_URL + "/api/auth";
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState("login"); 
-  // login | register | otp
+  const [mode, setMode] = useState("login"); // login | register | otp
 
-  const [form, setForm] = useState({
-    email: "",
-    password: "",
-    otp: ""
-  });
-
+  const [form, setForm] = useState({ email: "", password: "", otp: "" });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleRegister = async () => {
     try {
-      setLoading(true);
-      setError("");
-      setSuccess("");
-
-      await axios.post(`${API}/register`, {
-        email: form.email,
-        password: form.password
-      });
-
-      setSuccess("Registered! Check console for OTP (demo).");
+      setLoading(true); setError(""); setSuccess("");
+      await axios.post(`${API}/register`, { email: form.email, password: form.password });
+      setSuccess("Registered! Check your email for the OTP.");
       setMode("otp");
-
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleLogin = async () => {
     try {
-      setLoading(true);
-      setError("");
-
-      const res = await axios.post(
-        `${API}/login`,
-        {
-          email: form.email,
-          password: form.password
-        },
-        { withCredentials: true }
-      );
-
+      setLoading(true); setError("");
+      const res = await axios.post(`${API}/login`, { email: form.email, password: form.password }, { withCredentials: true });
       localStorage.setItem("accessToken", res.data.accessToken);
-      setSuccess("Login successful!");
       navigate("/dashboard");
     } catch (err) {
       setError(err.response?.data?.message || "Login failed");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleVerifyOtp = async () => {
     try {
-      setLoading(true);
-      setError("");
-
-      const res = await axios.post(
-        `${API}/verify-otp`,
-        {
-          email: form.email,
-          otp: form.otp
-        },
-        { withCredentials: true }
-      );
-
+      setLoading(true); setError("");
+      const res = await axios.post(`${API}/verify-otp`, { email: form.email, otp: form.otp }, { withCredentials: true });
       localStorage.setItem("accessToken", res.data.accessToken);
-      setSuccess("OTP verified. Logged in!");
+      navigate("/dashboard");
     } catch (err) {
-      setError(err.response?.data?.message || "OTP failed");
-    } finally {
-      setLoading(false);
-    }
+      setError(err.response?.data?.message || "OTP verification failed");
+    } finally { setLoading(false); }
   };
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      setLoading(true);
-      setError("");
-
-      const res = await axios.post(
-        `${API}/google`,
-        { credential: credentialResponse.credential },
-        { withCredentials: true }
-      );
-
+      setLoading(true); setError("");
+      const res = await axios.post(`${API}/google`, { credential: credentialResponse.credential }, { withCredentials: true });
       localStorage.setItem("accessToken", res.data.accessToken);
-      setSuccess("Google login successful!");
-      navigate('/dashboard')
-    } catch (err) {
-      setError("Google login failed");
-    } finally {
-      setLoading(false);
-    }
+      navigate("/dashboard");
+    } catch { setError("Google login failed"); }
+    finally { setLoading(false); }
+  };
+
+  const inputCls = "w-full bg-white border border-[var(--color-borderDark)] rounded-[8px] px-[13px] py-[10px] text-[13px] text-[var(--color-text)] font-[inherit] box-border focus:outline-2 focus:outline-[var(--color-accent)] focus:outline-offset-1 transition-all placeholder:text-[var(--color-faint)]";
+  const btnCls   = "w-full py-[11px] rounded-[9px] border-none bg-[var(--color-accent)] text-white font-bold text-[13px] cursor-pointer font-[inherit] transition-opacity hover:opacity-90 disabled:opacity-50";
+
+  const modeConfig = {
+    login:    { title: "Welcome back",       sub: "Sign in to your account"           },
+    register: { title: "Create account",     sub: "Get started with CountTimer Pro"   },
+    otp:      { title: "Check your email",   sub: `We sent a 6-digit code to ${form.email}` },
   };
 
   return (
-    <div style={styles.container}>
-      <h2>Auth System</h2>
+    <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center px-4 font-[var(--font-sans)]">
+      <style>{`
+        *{box-sizing:border-box;}
+        input:focus{outline:2px solid var(--color-accent);outline-offset:1px;border-radius:8px;}
+        .auth-card{animation:fadeUp .25s ease both;}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
 
-      {error && <div style={styles.error}>{error}</div>}
-      {success && <div style={styles.success}>{success}</div>}
+      <div className="auth-card w-full max-w-[400px]">
 
-      {(mode === "login" || mode === "register") && (
-        <>
-          <input
-            name="email"
-            placeholder="Email"
-            value={form.email}
-            onChange={handleChange}
-            style={styles.input}
-          />
-          <input
-            name="password"
-            type="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={handleChange}
-            style={styles.input}
-          />
-        </>
-      )}
+        {/* Logo / Brand */}
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center text-2xl mx-auto mb-3 shadow-[var(--shadow-xl)]">
+            ⏳
+          </div>
+          <div className="font-bold text-[15px] text-[var(--color-text)]">Timerly</div>
+          <div className="text-[11px] text-[var(--color-faint)] mt-0.5">All-in-one countdown generator</div>
+        </div>
 
-      {mode === "otp" && (
-        <>
-          <input
-            name="email"
-            placeholder="Email"
-            value={form.email}
-            onChange={handleChange}
-            style={styles.input}
-          />
-          <input
-            name="otp"
-            placeholder="Enter OTP"
-            value={form.otp}
-            onChange={handleChange}
-            style={styles.input}
-          />
-        </>
-      )}
+        {/* Card */}
+        <div className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-2xl shadow-[var(--shadow-lg)] p-7">
 
-      {mode === "login" && (
-        <>
-          <button onClick={handleLogin} disabled={loading} style={styles.btn}>
-            {loading ? "Loading..." : "Login"}
-          </button>
+          {/* Header */}
+          <div className="mb-5">
+            <div className="font-bold text-[18px] text-[var(--color-text)] mb-1">
+              {modeConfig[mode].title}
+            </div>
+            <div className="text-[12px] text-[var(--color-muted)] leading-[1.5]">
+              {modeConfig[mode].sub}
+            </div>
+          </div>
 
-          <p onClick={() => setMode("register")} style={styles.link}>
-            Don't have account? Register
-          </p>
-        </>
-      )}
+          {/* Alerts */}
+          {error && (
+            <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-redBg)] border border-[var(--color-redBdr)] text-[var(--color-red)] text-[12px] font-medium">
+              ⚠ {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-greenBg)] border border-[var(--color-greenBdr)] text-[var(--color-green)] text-[12px] font-medium">
+              ✓ {success}
+            </div>
+          )}
 
-      {mode === "register" && (
-        <>
-          <button onClick={handleRegister} disabled={loading} style={styles.btn}>
-            {loading ? "Loading..." : "Register"}
-          </button>
+          {/* Fields */}
+          <div className="flex flex-col gap-3">
 
-          <p onClick={() => setMode("login")} style={styles.link}>
-            Already have account? Login
-          </p>
-        </>
-      )}
+            {/* Email — always shown */}
+            <div>
+              <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
+                Email
+              </label>
+              <input
+                name="email" type="email" placeholder="you@example.com"
+                value={form.email} onChange={handleChange}
+                className={inputCls}
+                disabled={mode === "otp"}
+              />
+            </div>
 
-      {mode === "otp" && (
-        <>
-          <button onClick={handleVerifyOtp} disabled={loading} style={styles.btn}>
-            {loading ? "Verifying..." : "Verify OTP"}
-          </button>
-        </>
-      )}
+            {/* Password — login & register only */}
+            {(mode === "login" || mode === "register") && (
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
+                  Password
+                </label>
+                <input
+                  name="password" type="password" placeholder="••••••••"
+                  value={form.password} onChange={handleChange}
+                  className={inputCls}
+                  onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())}
+                />
+              </div>
+            )}
 
-      <hr />
+            {/* OTP field */}
+            {mode === "otp" && (
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
+                  One-time code
+                </label>
+                <input
+                  name="otp" type="text" placeholder="123456" maxLength={6}
+                  value={form.otp} onChange={handleChange}
+                  className={`${inputCls} text-center text-[22px] font-bold tracking-[0.3em] font-mono`}
+                  onKeyDown={(e) => e.key === "Enter" && handleVerifyOtp()}
+                  autoFocus
+                />
+                <div className="text-[11px] text-[var(--color-faint)] mt-1.5 text-center">
+                  Code expires in 5 minutes
+                </div>
+              </div>
+            )}
 
-      <GoogleLogin
-        onSuccess={handleGoogleSuccess}
-        onError={() => setError("Google Login Failed")}
-      />
+            {/* CTA Button */}
+            {mode === "login" && (
+              <button onClick={handleLogin} disabled={loading} className={btnCls}>
+                {loading ? "Signing in…" : "Sign In"}
+              </button>
+            )}
+            {mode === "register" && (
+              <button onClick={handleRegister} disabled={loading} className={btnCls}>
+                {loading ? "Creating account…" : "Create Account"}
+              </button>
+            )}
+            {mode === "otp" && (
+              <>
+                <button onClick={handleVerifyOtp} disabled={loading} className={btnCls}>
+                  {loading ? "Verifying…" : "Verify Code →"}
+                </button>
+                <button
+                  onClick={() => { setMode("register"); setForm(f => ({ ...f, otp: "" })); setError(""); setSuccess(""); }}
+                  className="w-full py-2 text-[12px] text-[var(--color-muted)] cursor-pointer bg-transparent border-none font-[inherit] hover:text-[var(--color-accent)] transition-colors">
+                  ← Back to register
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Divider + Google — not shown on OTP screen */}
+          {mode !== "otp" && (
+            <>
+              <div className="flex items-center gap-3 my-5">
+                <div className="flex-1 h-px bg-[var(--color-border)]" />
+                <span className="text-[11px] text-[var(--color-faint)] font-medium">or</span>
+                <div className="flex-1 h-px bg-[var(--color-border)]" />
+              </div>
+
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError("Google Login Failed")}
+                  theme="outline"
+                  size="large"
+                  width="340"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Mode switcher */}
+          {mode !== "otp" && (
+            <div className="text-center mt-5 text-[12px] text-[var(--color-muted)]">
+              {mode === "login" ? (
+                <>Don't have an account?{" "}
+                  <span onClick={() => { setMode("register"); setError(""); setSuccess(""); }}
+                    className="text-[var(--color-accent)] font-semibold cursor-pointer hover:underline">
+                    Register
+                  </span>
+                </>
+              ) : (
+                <>Already have an account?{" "}
+                  <span onClick={() => { setMode("login"); setError(""); setSuccess(""); }}
+                    className="text-[var(--color-accent)] font-semibold cursor-pointer hover:underline">
+                    Sign in
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-5 text-[11px] text-[var(--color-faint)]">
+          © {new Date().getFullYear()} CountTimer Pro · All rights reserved
+        </div>
+      </div>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    width: "350px",
-    margin: "100px auto",
-    padding: "20px",
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-    textAlign: "center"
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    margin: "8px 0"
-  },
-  btn: {
-    width: "100%",
-    padding: "10px",
-    marginTop: "10px"
-  },
-  error: {
-    color: "red",
-    marginBottom: "10px"
-  },
-  success: {
-    color: "green",
-    marginBottom: "10px"
-  },
-  link: {
-    color: "blue",
-    cursor: "pointer",
-    marginTop: "10px"
-  }
-};
