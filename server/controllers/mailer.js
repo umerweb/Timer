@@ -1,26 +1,13 @@
 // utils/mailer.js
 const nodemailer = require("nodemailer");
-const SibApiV3Sdk = require("sib-api-v3-sdk");
 
-const isProduction = !!process.env.BREVO_KEY;
-
-// Gmail transporter (fallback / local dev)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.GMAIL_USER, // your Gmail address
-    pass: process.env.GMAIL_PASS, // Gmail App Password
+    user: process.env.GMAIL_USER,   // your Gmail address
+    pass: process.env.GMAIL_PASS,   // Gmail App Password (not your real password)
   },
 });
-
-// Brevo API client
-let brevoClient;
-if (isProduction) {
-  const defaultClient = SibApiV3Sdk.ApiClient.instance;
-  const apiKey = defaultClient.authentications["api-key"];
-  apiKey.apiKey = process.env.BREVO_KEY;
-  brevoClient = new SibApiV3Sdk.TransactionalEmailsApi();
-}
 
 /**
  * Send an OTP email.
@@ -56,31 +43,12 @@ async function sendOtpEmail(to, otp, type = "email_verify") {
     </div>
   `;
 
-  try {
-    if (isProduction) {
-      // Send via Brevo API
-      const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail({
-        to: [{ email: to }],
-        sender: { name: "Timerly", email: process.env.GMAIL_USER },
-        subject,
-        htmlContent: html,
-      });
-
-      await brevoClient.sendTransacEmail(sendSmtpEmail);
-    } else {
-      // Send via Gmail (local fallback)
-      await transporter.sendMail({
-        from: `"Timerly" <${process.env.GMAIL_USER}>`,
-        to,
-        subject,
-        html,
-      });
-    }
-
-    console.log(`OTP sent to ${to} via ${isProduction ? "Brevo" : "Gmail"}`);
-  } catch (err) {
-    console.error("Failed to send OTP email:", err);
-  }
+  await transporter.sendMail({
+    from: `"Timerly" <${process.env.GMAIL_USER}>`,
+    to,
+    subject,
+    html,
+  });
 }
 
 module.exports = { sendOtpEmail };

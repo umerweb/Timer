@@ -55,7 +55,18 @@ exports.register = async (req, res) => {
     );
 
     try {
-      await sendOtpEmail(email, otp, "email_verify");
+        try {
+        await sendOtpEmail(email, otp, "email_verify");
+        } catch (e) {
+          console.error("Failed to send OTP email:", e);
+        }
+
+        // Send OTP back to frontend (for demo/testing)
+        res.json({
+          message: "User registered. Verify OTP.",
+          otp,        // <-- sending OTP to frontend
+          userId,
+        });
     } catch (e) {
       console.error("Failed to send OTP email:", e);
     }

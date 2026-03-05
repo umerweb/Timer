@@ -19,8 +19,9 @@ export default function AuthPage() {
   const handleRegister = async () => {
     try {
       setLoading(true); setError(""); setSuccess("");
-      await axios.post(`${API}/register`, { email: form.email, password: form.password });
-      setSuccess("Registered! Check your email for the OTP.");
+      const res = await axios.post(`${API}/register`, { email: form.email, password: form.password });
+      const { otp } = res.data;
+      setSuccess(`Registered! Your OTP is: ${otp}`);
       setMode("otp");
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
