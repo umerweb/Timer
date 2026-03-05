@@ -3,7 +3,8 @@ import axios from "axios";
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
-const API = "https://timer-server-moyt.onrender.com/api/auth";
+//const API = "https://timer-server-moyt.onrender.com/api/auth";
+const API = import.meta.env.VITE_BACKEND_URL+'/api/auth';
 
 export default function AuthPage() {
   const navigate = useNavigate();

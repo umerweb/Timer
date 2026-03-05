@@ -1,6 +1,8 @@
-const express    = require("express");
+// timer.js
+const express        = require("express");
 const { createCanvas } = require("canvas");
-const GIFEncoder = require("gifencoder");
+const GIFEncoder     = require("gifencoder");
+const { fromZonedTime } = require("date-fns-tz");
 
 const router = express.Router();
 
@@ -13,14 +15,40 @@ function parseColor(raw) {
   return raw.startsWith("#") ? raw : "#" + raw;
 }
 
-function calcTime(target, mode, countUp, egHours) {
+/**
+ * Convert a naive datetime-local string ("2026-03-20T18:00") plus a
+ * timezone name ("Asia/Karachi") into a real UTC Date object.
+ *
+ * If the target already looks like a full ISO string with offset (contains
+ * "Z" or "+") we use it directly — no conversion needed.
+ */
+function resolveTarget(target, timezone) {
+  if (!target) return new Date(Date.now() + 7 * 86400000);
+
+  // Already has timezone info — use as-is
+  if (target.includes("Z") || target.includes("+") || target.includes("-", 10)) {
+    return new Date(target);
+  }
+
+  // Naive datetime-local string — interpret it in the given timezone
+  try {
+    return fromZonedTime(target, timezone || "UTC");
+  } catch {
+    return new Date(target); // fallback: treat as UTC
+  }
+}
+
+function calcTime(target, timezone, mode, countUp, egHours) {
   if (mode === "evergreen") {
     const h = Number(egHours) || 48;
     return { days: Math.floor(h / 24), hours: h % 24, minutes: 0, seconds: 0, done: false };
   }
-  let diff = new Date(target) - new Date();
+
+  const targetDate = resolveTarget(target, timezone);
+  let diff = targetDate - new Date();
   if (countUp) diff = -diff;
   if (diff < 0) diff = 0;
+
   return {
     days:    Math.floor(diff / 86400000),
     hours:   Math.floor((diff % 86400000) / 3600000),
@@ -33,13 +61,14 @@ function calcTime(target, mode, countUp, egHours) {
 function parseParams(q) {
   return {
     target:       q.target      || new Date(Date.now() + 7 * 86400000).toISOString(),
+    timezone:     q.timezone    || "UTC",
     mode:         q.mode        || "countdown",
     countUp:      q.countUp === "1" || q.countUp === "true",
     egHours:      parseInt(q.egHours) || 48,
-    bg:           parseColor(q.bg    || "0f0f1a"),
-    box:          parseColor(q.box   || "1e1b4b"),
-    textColor:    parseColor(q.text  || "e0e7ff"),
-    accent:       parseColor(q.accent|| "818cf8"),
+    bg:           parseColor(q.bg     || "0f0f1a"),
+    box:          parseColor(q.box    || "1e1b4b"),
+    textColor:    parseColor(q.text   || "e0e7ff"),
+    accent:       parseColor(q.accent || "818cf8"),
     title:        q.title       || "",
     fontSize:     Math.min(parseInt(q.fontSize) || 36, 48),
     borderRadius: parseInt(q.borderRadius) || 12,
@@ -57,13 +86,13 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.arcTo(x + w, y,     x + w, y + r,     r);
   ctx.lineTo(x + w, y + h - r);
   ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
   ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.arcTo(x,     y + h, x,     y + h - r, r);
   ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
+  ctx.arcTo(x,     y,     x + r, y,          r);
   ctx.closePath();
 }
 
@@ -94,19 +123,19 @@ function drawFrame(ctx, W, H, timeObj, p) {
   const sy     = (H - boxH - titleH) / 2 + titleH;
 
   if (p.title) {
-    ctx.fillStyle = p.textColor;
+    ctx.fillStyle   = p.textColor;
     ctx.globalAlpha = 0.85;
-    ctx.font = "bold 10px monospace";
-    ctx.textAlign = "center";
+    ctx.font        = "bold 10px monospace";
+    ctx.textAlign   = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(p.title.toUpperCase(), W / 2, sy - 14);
     ctx.globalAlpha = 1;
   }
 
   if (timeObj.done) {
-    ctx.fillStyle = p.accent;
-    ctx.font = "bold 22px monospace";
-    ctx.textAlign = "center";
+    ctx.fillStyle    = p.accent;
+    ctx.font         = "bold 22px monospace";
+    ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("EXPIRED", W / 2, H / 2);
     return;
@@ -117,41 +146,47 @@ function drawFrame(ctx, W, H, timeObj, p) {
     const y  = sy;
     const br = Math.min(p.borderRadius, 10);
 
+    // Drop shadow
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     roundRect(ctx, x + 2, y + 2, boxW, boxH - 16, br);
     ctx.fill();
 
+    // Box background
     ctx.fillStyle = p.box;
     roundRect(ctx, x, y, boxW, boxH - 16, br);
     ctx.fill();
 
+    // Box border
     ctx.strokeStyle = p.accent + "55";
-    ctx.lineWidth = 1;
+    ctx.lineWidth   = 1;
     roundRect(ctx, x, y, boxW, boxH - 16, br);
     ctx.stroke();
 
-    ctx.fillStyle = p.textColor;
-    ctx.font = `bold ${fs}px monospace`;
-    ctx.textAlign = "center";
+    // Number
+    ctx.fillStyle    = p.textColor;
+    ctx.font         = `bold ${fs}px monospace`;
+    ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(val, x + boxW / 2, y + (boxH - 16) / 2);
 
-    ctx.fillStyle = p.textColor;
-    ctx.globalAlpha = 0.5;
-    ctx.font = "bold 8px monospace";
-    ctx.textAlign = "center";
+    // Label
+    ctx.fillStyle    = p.textColor;
+    ctx.globalAlpha  = 0.5;
+    ctx.font         = "bold 8px monospace";
+    ctx.textAlign    = "center";
     ctx.textBaseline = "top";
     ctx.fillText(lbl, x + boxW / 2, y + boxH - 14);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha  = 1;
 
+    // Separator colon
     if (i < units.length - 1) {
-      ctx.fillStyle = p.accent;
-      ctx.globalAlpha = 0.7;
-      ctx.font = `bold ${Math.floor(fs * 0.8)}px monospace`;
-      ctx.textAlign = "center";
+      ctx.fillStyle    = p.accent;
+      ctx.globalAlpha  = 0.7;
+      ctx.font         = `bold ${Math.floor(fs * 0.8)}px monospace`;
+      ctx.textAlign    = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(":", x + boxW + gap / 2, y + (boxH - 16) / 2 - 3);
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha  = 1;
     }
   });
 }
@@ -159,15 +194,15 @@ function drawFrame(ctx, W, H, timeObj, p) {
 /* ─── GET /gif ───────────────────────────────────────────────────────────── */
 router.get("/gif", (req, res) => {
   try {
-    const p   = parseParams(req.query);
-    const W   = p.width;
-    const H   = p.height;
+    const p = parseParams(req.query);
+    const W = p.width;
+    const H = p.height;
 
     const encoder = new GIFEncoder(W, H);
-    res.setHeader("Content-Type", "image/gif");
+    res.setHeader("Content-Type",  "image/gif");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
+    res.setHeader("Pragma",        "no-cache");
+    res.setHeader("Expires",       "0");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     encoder.createReadStream().pipe(res);
@@ -179,7 +214,8 @@ router.get("/gif", (req, res) => {
     const canvas = createCanvas(W, H);
     const ctx    = canvas.getContext("2d");
 
-    const baseTime     = calcTime(p.target, p.mode, p.countUp, p.egHours);
+    // Compute base time once using the resolved timezone-aware target
+    const baseTime     = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
     const baseTotalSec = baseTime.days * 86400 + baseTime.hours * 3600 + baseTime.minutes * 60 + baseTime.seconds;
 
     for (let s = 0; s < 60; s++) {
@@ -208,11 +244,11 @@ router.get("/preview", (req, res) => {
     const p      = parseParams(req.query);
     const canvas = createCanvas(p.width, p.height);
     const ctx    = canvas.getContext("2d");
-    const time   = calcTime(p.target, p.mode, p.countUp, p.egHours);
+    const time   = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
 
     drawFrame(ctx, p.width, p.height, time, p);
 
-    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Content-Type",  "image/png");
     res.setHeader("Cache-Control", "no-cache");
     canvas.createPNGStream().pipe(res);
   } catch (err) {
@@ -223,14 +259,24 @@ router.get("/preview", (req, res) => {
 
 /* ─── GET /embed ─────────────────────────────────────────────────────────── */
 router.get("/embed", (req, res) => {
-  const p     = parseParams(req.query);
-  const units = [
+  const p      = parseParams(req.query);
+  const units  = [
     p.showDays    && "days",
     p.showHours   && "hours",
     p.showMinutes && "minutes",
     p.showSeconds && "seconds",
   ].filter(Boolean);
   const lblMap = { days: "DAYS", hours: "HRS", minutes: "MIN", seconds: "SEC" };
+
+  // For the embed we need to pass a fully resolved UTC ISO string to the
+  // browser's JS so its own Date() math is correct regardless of the
+  // viewer's local timezone.
+  let resolvedTarget;
+  if (p.mode === "evergreen") {
+    resolvedTarget = "EVERGREEN";
+  } else {
+    resolvedTarget = resolveTarget(p.target, p.timezone).toISOString();
+  }
 
   const html = `<!DOCTYPE html>
 <html>
@@ -247,7 +293,7 @@ router.get("/embed", (req, res) => {
   .unit{display:flex;flex-direction:column;align-items:center;}
   .box{background:${p.box};color:${p.textColor};font-size:${p.fontSize}px;font-weight:700;padding:10px 16px;border-radius:7px;line-height:1;min-width:52px;text-align:center;border:1px solid ${p.accent}33;box-shadow:0 2px 8px rgba(0,0,0,.3);}
   .lbl{color:${p.textColor};font-size:9px;opacity:.55;margin-top:4px;letter-spacing:.14em;}
-  .sep{color:${p.accent};font-size:${Math.floor(p.fontSize * .8)}px;font-weight:700;padding-bottom:12px;opacity:.65;align-self:center;}
+  .sep{color:${p.accent};font-size:${Math.floor(p.fontSize * 0.8)}px;font-weight:700;padding-bottom:12px;opacity:.65;align-self:center;}
   .expired{color:${p.accent};font-size:22px;font-weight:700;letter-spacing:.1em;}
 </style>
 </head>
@@ -258,7 +304,8 @@ router.get("/embed", (req, res) => {
 </div>
 <script>
 (function(){
-  var T="${p.mode === "evergreen" ? "EVERGREEN" : new Date(p.target).toISOString()}";
+  // resolvedTarget is already a UTC ISO string — no timezone math needed in the browser
+  var T="${resolvedTarget}";
   var MODE="${p.mode}";
   var EG=${p.egHours};
   var UNITS=${JSON.stringify(units)};
