@@ -10,11 +10,20 @@ const timersRoutes = require("./routes/timers");
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
+const allowedOrigins = [
+  "https://timer-front-xiwi.onrender.com"
+];
+
 app.use(cors({
-  origin: process.env.FRONT_URL,
+  origin: function(origin, callback){
+    if(!origin || allowedOrigins.includes(origin)){
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed"));
+    }
+  },
   credentials: true
 }));
-
 app.use(express.json());
 app.use(cookieParser());
 
