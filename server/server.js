@@ -21,6 +21,7 @@ app.use(cookieParser());
 /* ─── routes ─────────────────────────────────────────────────────────────── */
 app.use("/api/auth",  authRoutes);
 app.use("/api/timer", timerRoutes);
+app.use("/t", timerRoutes); 
 app.use("/api/timers", timersRoutes);
 
 /* ─── health ─────────────────────────────────────────────────────────────── */

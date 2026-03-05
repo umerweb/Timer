@@ -10,9 +10,8 @@ import {
   cssVar,
 } from "../theme";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-//const API = "https://timer-server-moyt.onrender.com";
 const API = import.meta.env.VITE_BACKEND_URL;
+
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 const authHeaders = () => ({
   "Content-Type": "application/json",
@@ -60,6 +59,7 @@ function calcTime(target, mode, countUp, egHours) {
   };
 }
 
+// Used only for the live editor preview (before/without saving)
 function buildParams(cfg, target, mode, egHours, timezone) {
   return new URLSearchParams({
     target, mode, egHours, timezone,
@@ -78,6 +78,11 @@ function buildParams(cfg, target, mode, egHours, timezone) {
   }).toString();
 }
 
+// Short URLs — server reconstructs params from DB by timer ID
+function timerGifUrl(id)   { return `${API}/t/${id}/gif`; }
+function timerEmbedUrl(id) { return `${API}/t/${id}/embed`; }
+function timerShareUrl(id) { return `${window.location.origin}/t/${id}`; }
+
 function defaultTarget() {
   const d = new Date();
   d.setDate(d.getDate() + 7);
@@ -85,8 +90,6 @@ function defaultTarget() {
 }
 
 // ─── TimerFace ────────────────────────────────────────────────────────────────
-// Timer face still uses inline styles because colors come from the user's
-// custom cfg object (dynamic per-timer values, not from the global theme).
 const TimerFace = memo(function ({ time, cfg, scale = 1 }) {
   const units = [
     cfg.showDays    && { lbl: "DAYS", val: pad(time.days) },
@@ -97,86 +100,42 @@ const TimerFace = memo(function ({ time, cfg, scale = 1 }) {
   const fs = (cfg.fontSize || 36) * scale;
 
   return (
-    <div
-      style={{
-        background:   cfg.transparent ? "transparent" : cfg.bg,
-        padding:      `${20 * scale}px ${24 * scale}px`,
-        borderRadius: `${(cfg.borderRadius || 12) * scale}px`,
-        fontFamily:   `'${cfg.font || "Orbitron"}', monospace`,
-        border:       `${2 * scale}px solid ${cfg.accent}44`,
-        boxShadow:    `0 ${4 * scale}px ${20 * scale}px ${cfg.accent}18`,
-        display:      "inline-flex",
-        flexDirection: "column",
-        alignItems:   "center",
-        gap:          `${10 * scale}px`,
-      }}
-    >
+    <div style={{
+      background: cfg.transparent ? "transparent" : cfg.bg,
+      padding: `${20 * scale}px ${24 * scale}px`,
+      borderRadius: `${(cfg.borderRadius || 12) * scale}px`,
+      fontFamily: `'${cfg.font || "Orbitron"}', monospace`,
+      border: `${2 * scale}px solid ${cfg.accent}44`,
+      boxShadow: `0 ${4 * scale}px ${20 * scale}px ${cfg.accent}18`,
+      display: "inline-flex", flexDirection: "column", alignItems: "center",
+      gap: `${10 * scale}px`,
+    }}>
       {cfg.title && (
-        <div
-          style={{
-            color:          cfg.text,
-            fontSize:       `${11 * scale}px`,
-            letterSpacing:  "0.18em",
-            textTransform:  "uppercase",
-            fontWeight:     700,
-            opacity:        0.9,
-          }}
-        >
+        <div style={{ color: cfg.text, fontSize: `${11 * scale}px`, letterSpacing: "0.18em",
+          textTransform: "uppercase", fontWeight: 700, opacity: 0.9 }}>
           {cfg.title}
         </div>
       )}
-
       {time.done ? (
-        <div style={{ color: cfg.accent, fontSize: `${20 * scale}px`, fontWeight: 700 }}>
-          EXPIRED
-        </div>
+        <div style={{ color: cfg.accent, fontSize: `${20 * scale}px`, fontWeight: 700 }}>EXPIRED</div>
       ) : (
         <div style={{ display: "flex", gap: `${10 * scale}px`, alignItems: "flex-start" }}>
           {units.map(({ lbl, val }, i) => (
             <div key={lbl} style={{ display: "flex", alignItems: "center" }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div
-                  style={{
-                    background:   cfg.box,
-                    color:        cfg.text,
-                    fontSize:     `${fs}px`,
-                    fontWeight:   700,
-                    padding:      `${10 * scale}px ${16 * scale}px`,
-                    borderRadius: `${7 * scale}px`,
-                    lineHeight:   1,
-                    minWidth:     `${52 * scale}px`,
-                    textAlign:    "center",
-                    border:       `1px solid ${cfg.accent}30`,
-                    boxShadow:    `0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.25)`,
-                  }}
-                >
-                  {val}
-                </div>
-                <div
-                  style={{
-                    color:         cfg.text,
-                    fontSize:      `${9 * scale}px`,
-                    opacity:       0.55,
-                    marginTop:     `${4 * scale}px`,
-                    letterSpacing: "0.14em",
-                  }}
-                >
-                  {lbl}
-                </div>
+                <div style={{
+                  background: cfg.box, color: cfg.text, fontSize: `${fs}px`, fontWeight: 700,
+                  padding: `${10 * scale}px ${16 * scale}px`, borderRadius: `${7 * scale}px`,
+                  lineHeight: 1, minWidth: `${52 * scale}px`, textAlign: "center",
+                  border: `1px solid ${cfg.accent}30`,
+                  boxShadow: `0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.25)`,
+                }}>{val}</div>
+                <div style={{ color: cfg.text, fontSize: `${9 * scale}px`, opacity: 0.55,
+                  marginTop: `${4 * scale}px`, letterSpacing: "0.14em" }}>{lbl}</div>
               </div>
               {i < units.length - 1 && (
-                <div
-                  style={{
-                    color:        cfg.accent,
-                    fontSize:     `${fs * 0.8}px`,
-                    fontWeight:   700,
-                    margin:       `0 ${3 * scale}px`,
-                    paddingBottom:`${12 * scale}px`,
-                    opacity:      0.65,
-                  }}
-                >
-                  :
-                </div>
+                <div style={{ color: cfg.accent, fontSize: `${fs * 0.8}px`, fontWeight: 700,
+                  margin: `0 ${3 * scale}px`, paddingBottom: `${12 * scale}px`, opacity: 0.65 }}>:</div>
               )}
             </div>
           ))}
@@ -197,8 +156,7 @@ function LiveClock({ target, mode, countUp, egHours, cfg }) {
   return <TimerFace time={time} cfg={cfg} scale={1} />;
 }
 
-// ─── Shared UI atoms (all Tailwind) ───────────────────────────────────────────
-
+// ─── UI atoms ─────────────────────────────────────────────────────────────────
 function Lbl({ children }) {
   return (
     <div className="text-[var(--color-muted)] text-[11px] font-semibold uppercase tracking-[0.05em] mb-1.5">
@@ -226,14 +184,8 @@ function Card({ children, className = "" }) {
 
 function Chip({ active, onClick, icon, title, desc }) {
   return (
-    <div
-      onClick={onClick}
-      className={`px-3 py-2.5 rounded-lg cursor-pointer mb-1.5 border-[1.5px] transition-all duration-150
-        ${active
-          ? "bg-[var(--color-accentBg)] border-[var(--color-accent)]"
-          : "bg-[var(--color-card)] border-[var(--color-border)]"
-        }`}
-    >
+    <div onClick={onClick} className={`px-3 py-2.5 rounded-lg cursor-pointer mb-1.5 border-[1.5px] transition-all duration-150
+      ${active ? "bg-[var(--color-accentBg)] border-[var(--color-accent)]" : "bg-[var(--color-card)] border-[var(--color-border)]"}`}>
       <div className={`text-xs font-bold ${active ? "text-[var(--color-accent)]" : "text-[var(--color-mid)]"}`}>
         {icon} {title}
       </div>
@@ -244,14 +196,8 @@ function Chip({ active, onClick, icon, title, desc }) {
 
 function InfoBox({ colorVar, bgVar, borderVar, title, children }) {
   return (
-    <div
-      className={`rounded-[10px] p-3 mb-3.5 border`}
-      style={{
-        background:   cssVar(bgVar),
-        borderColor:  cssVar(borderVar),
-        color:        cssVar(colorVar),
-      }}
-    >
+    <div className="rounded-[10px] p-3 mb-3.5 border"
+      style={{ background: cssVar(bgVar), borderColor: cssVar(borderVar), color: cssVar(colorVar) }}>
       <div className="text-xs font-bold mb-0.5">{title}</div>
       <div className="text-[11px] leading-[1.65] opacity-85">{children}</div>
     </div>
@@ -270,11 +216,9 @@ function CodeBox({ code, cid, copied, copy, label }) {
         <pre className="bg-[var(--color-codeBg)] text-[var(--color-codeText)] px-3.5 py-3 rounded-lg text-[11px] overflow-x-auto m-0 font-mono border border-[#313244] leading-[1.6] max-h-[150px] whitespace-pre-wrap break-all">
           {code}
         </pre>
-        <button
-          onClick={() => copy(code, cid)}
+        <button onClick={() => copy(code, cid)}
           className={`absolute top-2 right-2 text-white border-none rounded-[5px] px-2.5 py-1 text-[10px] cursor-pointer font-bold font-[inherit] transition-colors
-            ${copied === cid ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}
-        >
+            ${copied === cid ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}>
           {copied === cid ? "✓ Copied" : "Copy"}
         </button>
       </div>
@@ -282,38 +226,43 @@ function CodeBox({ code, cid, copied, copy, label }) {
   );
 }
 
-// ─── Modals ───────────────────────────────────────────────────────────────────
+// Shown on email/embed/share tabs when timer hasn't been saved yet
+function UnsavedNudge({ onSave }) {
+  return (
+    <div className="rounded-[10px] p-4 mb-4 border border-[var(--color-amberBdr)] bg-[var(--color-amberBg)] text-center">
+      <div className="text-2xl mb-2">💾</div>
+      <div className="text-[var(--color-amber)] font-bold text-xs mb-1">Save timer first</div>
+      <div className="text-[var(--color-amber)] text-[11px] opacity-85 mb-3 leading-[1.5]">
+        Save your timer to get a short permanent link for embedding and sharing.
+      </div>
+      <button onClick={onSave}
+        className="bg-[var(--color-accent)] text-white border-none rounded-lg px-4 py-2 text-xs font-bold cursor-pointer font-[inherit]">
+        Save Timer
+      </button>
+    </div>
+  );
+}
 
+// ─── Modals ───────────────────────────────────────────────────────────────────
 function NameModal({ title, description, initialValue = "", confirmLabel = "Save", onConfirm, onClose }) {
   const [name, setName] = useState(initialValue);
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl p-7 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.2)]">
         <div className="font-bold text-base mb-1 text-[var(--color-text)]">{title}</div>
         <div className="text-[var(--color-muted)] text-xs mb-[18px] leading-[1.5]">{description}</div>
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && name.trim() && onConfirm(name.trim())}
           placeholder="e.g. Black Friday Sale"
-          className={`${inputCls()} mb-5 text-sm`}
-        />
+          className={`${inputCls()} mb-5 text-sm`} />
         <div className="flex gap-2.5 justify-end">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-mid)] font-semibold text-[13px] cursor-pointer font-[inherit]"
-          >
+          <button onClick={onClose}
+            className="px-5 py-2 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-mid)] font-semibold text-[13px] cursor-pointer font-[inherit]">
             Cancel
           </button>
-          <button
-            onClick={() => name.trim() && onConfirm(name.trim())}
-            disabled={!name.trim()}
-            className={`px-5 py-2 rounded-lg border-none bg-[var(--color-accent)] text-white font-bold text-[13px] cursor-pointer font-[inherit] transition-opacity ${name.trim() ? "opacity-100" : "opacity-45"}`}
-          >
+          <button onClick={() => name.trim() && onConfirm(name.trim())} disabled={!name.trim()}
+            className={`px-5 py-2 rounded-lg border-none bg-[var(--color-accent)] text-white font-bold text-[13px] cursor-pointer font-[inherit] transition-opacity ${name.trim() ? "opacity-100" : "opacity-45"}`}>
             {confirmLabel}
           </button>
         </div>
@@ -324,10 +273,8 @@ function NameModal({ title, description, initialValue = "", confirmLabel = "Save
 
 function DeleteModal({ timerName, onConfirm, onClose }) {
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl p-7 w-[340px] shadow-[0_8px_40px_rgba(0,0,0,.2)]">
         <div className="text-[32px] text-center mb-2.5">🗑️</div>
         <div className="font-bold text-[15px] text-center text-[var(--color-text)] mb-1.5">Delete Timer?</div>
@@ -335,16 +282,12 @@ function DeleteModal({ timerName, onConfirm, onClose }) {
           <strong className="text-[var(--color-text)]">"{timerName}"</strong> will be permanently deleted.
         </div>
         <div className="flex gap-2.5">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-mid)] font-semibold text-[13px] cursor-pointer font-[inherit]"
-          >
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-mid)] font-semibold text-[13px] cursor-pointer font-[inherit]">
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2.5 rounded-lg border-none bg-[var(--color-red)] text-white font-bold text-[13px] cursor-pointer font-[inherit]"
-          >
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-lg border-none bg-[var(--color-red)] text-white font-bold text-[13px] cursor-pointer font-[inherit]">
             Delete
           </button>
         </div>
@@ -353,40 +296,28 @@ function DeleteModal({ timerName, onConfirm, onClose }) {
   );
 }
 
-// ─── Shared Header ────────────────────────────────────────────────────────────
-
+// ─── Header ───────────────────────────────────────────────────────────────────
 function Header({ user, serverOnline, onLogout, children }) {
   const statusCls = serverOnline === true
     ? "bg-[var(--color-greenBg)] border-[var(--color-greenBdr)] text-[var(--color-green)]"
     : serverOnline === false
     ? "bg-[var(--color-redBg)] border-[var(--color-redBdr)] text-[var(--color-red)]"
     : "bg-[var(--color-card)] border-[var(--color-border)] text-[var(--color-muted)]";
-
-  const dotCls = serverOnline === true
-    ? "bg-[#22c55e]"
-    : serverOnline === false
-    ? "bg-[#ef4444]"
-    : "bg-[#94a3b8]";
+  const dotCls = serverOnline === true ? "bg-[#22c55e]" : serverOnline === false ? "bg-[#ef4444]" : "bg-[#94a3b8]";
 
   return (
     <div className="bg-[var(--color-panel)] border-b border-[var(--color-border)] px-5 py-2.5 flex items-center gap-3 flex-shrink-0 shadow-[0_1px_4px_rgba(0,0,0,.06)]">
-      <div className="w-8 h-8 rounded-lg text-base bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center">
-        ⏳
-      </div>
+      <div className="w-8 h-8 rounded-lg text-base bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center">⏳</div>
       <div>
         <div className="font-bold text-sm">CountTimer Pro</div>
         <div className="text-[10px] text-[var(--color-faint)]">All-in-one countdown generator</div>
       </div>
       <div className="ml-auto flex items-center gap-2 flex-wrap">
         {children}
-
-        {/* Server status pill */}
         <div className={`flex items-center gap-1.5 px-2.5 py-[5px] rounded-full border text-[10px] font-semibold ${statusCls}`}>
           <div className={`w-1.5 h-1.5 rounded-full ${dotCls}`} />
           {serverOnline === true ? "Online" : serverOnline === false ? "Offline" : "…"}
         </div>
-
-        {/* User pill */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-full">
           <div className="w-[22px] h-[22px] rounded-full bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
             {user?.email?.[0]?.toUpperCase() ?? "U"}
@@ -395,11 +326,8 @@ function Header({ user, serverOnline, onLogout, children }) {
             {user?.email}
           </span>
         </div>
-
-        <button
-          onClick={onLogout}
-          className="bg-[var(--color-redBg)] border border-[var(--color-redBdr)] text-[var(--color-red)] rounded-lg px-[13px] py-[7px] text-[11px] font-bold cursor-pointer font-[inherit]"
-        >
+        <button onClick={onLogout}
+          className="bg-[var(--color-redBg)] border border-[var(--color-redBdr)] text-[var(--color-red)] rounded-lg px-[13px] py-[7px] text-[11px] font-bold cursor-pointer font-[inherit]">
           Logout
         </button>
       </div>
@@ -408,24 +336,19 @@ function Header({ user, serverOnline, onLogout, children }) {
 }
 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
-
 function HomeScreen({ user, serverOnline, timers, loading, onNew, onEdit, onDelete, onLogout }) {
   const [deleteModal, setDeleteModal] = useState(null);
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)] flex flex-col font-[var(--font-sans)]">
       <Header user={user} serverOnline={serverOnline} onLogout={onLogout}>
-        <button
-          onClick={onNew}
-          className="bg-[var(--color-accent)] text-white border-none rounded-lg px-[18px] py-2 text-[13px] font-bold cursor-pointer font-[inherit]"
-        >
+        <button onClick={onNew}
+          className="bg-[var(--color-accent)] text-white border-none rounded-lg px-[18px] py-2 text-[13px] font-bold cursor-pointer font-[inherit]">
           + New Timer
         </button>
       </Header>
 
       <div className="flex-1 px-7 py-8 max-w-[1100px] w-full mx-auto box-border">
-
-        {/* Welcome row */}
         <div className="mb-7">
           <div className="text-[22px] font-bold text-[var(--color-text)] mb-1">My Timers</div>
           <div className="text-[13px] text-[var(--color-muted)]">
@@ -436,22 +359,16 @@ function HomeScreen({ user, serverOnline, timers, loading, onNew, onEdit, onDele
         </div>
 
         {loading && (
-          <div className="text-center py-[60px] text-[var(--color-faint)] text-sm">
-            Loading timers…
-          </div>
+          <div className="text-center py-[60px] text-[var(--color-faint)] text-sm">Loading timers…</div>
         )}
 
         {!loading && timers.length === 0 && (
           <div className="text-center py-[72px] px-5">
             <div className="text-[52px] mb-4">⏳</div>
             <div className="text-lg font-bold text-[var(--color-mid)] mb-2">No timers yet</div>
-            <div className="text-[13px] text-[var(--color-muted)] mb-6">
-              Create a countdown for your next sale, launch, or event.
-            </div>
-            <button
-              onClick={onNew}
-              className="bg-[var(--color-accent)] text-white border-none rounded-[10px] px-7 py-3 text-sm font-bold cursor-pointer font-[inherit]"
-            >
+            <div className="text-[13px] text-[var(--color-muted)] mb-6">Create a countdown for your next sale, launch, or event.</div>
+            <button onClick={onNew}
+              className="bg-[var(--color-accent)] text-white border-none rounded-[10px] px-7 py-3 text-sm font-bold cursor-pointer font-[inherit]">
               + Create First Timer
             </button>
           </div>
@@ -459,25 +376,15 @@ function HomeScreen({ user, serverOnline, timers, loading, onNew, onEdit, onDele
 
         {!loading && timers.length > 0 && (
           <div className="grid gap-[18px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-
-            {/* Add new card */}
-            <div
-              onClick={onNew}
-              className="border-2 border-dashed border-[var(--color-accentBdr)] rounded-2xl p-7 flex flex-col items-center justify-center gap-2.5 cursor-pointer bg-[var(--color-accentBg)] transition-all duration-150 min-h-[160px] hover:border-[var(--color-accent)]"
-            >
-              <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-white text-2xl font-light">
-                +
-              </div>
+            <div onClick={onNew}
+              className="border-2 border-dashed border-[var(--color-accentBdr)] rounded-2xl p-7 flex flex-col items-center justify-center gap-2.5 cursor-pointer bg-[var(--color-accentBg)] transition-all duration-150 min-h-[160px] hover:border-[var(--color-accent)]">
+              <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-white text-2xl font-light">+</div>
               <div className="text-[var(--color-accent)] font-bold text-[13px]">New Timer</div>
             </div>
-
             {timers.map((timer) => (
-              <TimerGridCard
-                key={timer.id}
-                timer={timer}
+              <TimerGridCard key={timer.id} timer={timer}
                 onEdit={() => onEdit(timer)}
-                onDelete={() => setDeleteModal(timer)}
-              />
+                onDelete={() => setDeleteModal(timer)} />
             ))}
           </div>
         )}
@@ -487,15 +394,13 @@ function HomeScreen({ user, serverOnline, timers, loading, onNew, onEdit, onDele
         <DeleteModal
           timerName={deleteModal.name}
           onConfirm={() => { onDelete(deleteModal); setDeleteModal(null); }}
-          onClose={() => setDeleteModal(null)}
-        />
+          onClose={() => setDeleteModal(null)} />
       )}
     </div>
   );
 }
 
 // ─── Timer Grid Card ──────────────────────────────────────────────────────────
-
 function TimerGridCard({ timer, onEdit, onDelete }) {
   const modeLabel = { countdown: "Countdown", countup: "Count Up", evergreen: "Evergreen" }[timer.mode] || "Countdown";
   const modeIcon  = { countdown: "⏱", countup: "⬆", evergreen: "♻" }[timer.mode] || "⏱";
@@ -503,32 +408,22 @@ function TimerGridCard({ timer, onEdit, onDelete }) {
 
   return (
     <div className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-[var(--shadow-md)] flex flex-col transition-shadow duration-150 hover:shadow-[var(--shadow-lg)]">
-
-      {/* Color strip */}
       <div className="p-4 flex items-center justify-between" style={{ background: bg }}>
         <div className="flex gap-1.5">
           {[timer.cfg?.bg, timer.cfg?.box, timer.cfg?.text, timer.cfg?.accent].map((c, i) => (
-            <div
-              key={i}
-              className="w-2.5 h-2.5 rounded-full border border-white/25"
-              style={{ background: c || "#888" }}
-            />
+            <div key={i} className="w-2.5 h-2.5 rounded-full border border-white/25" style={{ background: c || "#888" }} />
           ))}
         </div>
         <div className="bg-white/15 rounded-full px-2.5 py-[3px] text-[10px] font-bold text-white flex items-center gap-1">
           {modeIcon} {modeLabel}
         </div>
       </div>
-
-      {/* Content */}
       <div className="px-4 py-3.5 flex-1">
         <div className="font-bold text-sm text-[var(--color-text)] mb-1 whitespace-nowrap overflow-hidden text-ellipsis">
           {timer.name}
         </div>
         <div className="text-[11px] text-[var(--color-muted)]">
-          {timer.cfg?.title && (
-            <span className="mr-2 text-[var(--color-faint)]">"{timer.cfg.title}"</span>
-          )}
+          {timer.cfg?.title && <span className="mr-2 text-[var(--color-faint)]">"{timer.cfg.title}"</span>}
           {timer.mode === "evergreen"
             ? `Resets every ${timer.egHours}h`
             : new Date(timer.target).toLocaleDateString(undefined, {
@@ -537,19 +432,13 @@ function TimerGridCard({ timer, onEdit, onDelete }) {
               })}
         </div>
       </div>
-
-      {/* Actions */}
       <div className="px-3.5 py-2.5 border-t border-[var(--color-border)] flex gap-2">
-        <button
-          onClick={onEdit}
-          className="flex-1 py-2 rounded-lg border border-[var(--color-accentBdr)] bg-[var(--color-accentBg)] text-[var(--color-accent)] font-bold text-xs cursor-pointer font-[inherit]"
-        >
+        <button onClick={onEdit}
+          className="flex-1 py-2 rounded-lg border border-[var(--color-accentBdr)] bg-[var(--color-accentBg)] text-[var(--color-accent)] font-bold text-xs cursor-pointer font-[inherit]">
           ✏️ Edit
         </button>
-        <button
-          onClick={onDelete}
-          className="px-3 py-2 rounded-lg border border-[var(--color-redBdr)] bg-[var(--color-redBg)] text-[var(--color-red)] font-bold text-xs cursor-pointer font-[inherit]"
-        >
+        <button onClick={onDelete}
+          className="px-3 py-2 rounded-lg border border-[var(--color-redBdr)] bg-[var(--color-redBg)] text-[var(--color-red)] font-bold text-xs cursor-pointer font-[inherit]">
           🗑️
         </button>
       </div>
@@ -558,7 +447,6 @@ function TimerGridCard({ timer, onEdit, onDelete }) {
 }
 
 // ─── Editor Screen ────────────────────────────────────────────────────────────
-
 function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLogout }) {
   const isNew = !initialTimer;
 
@@ -569,14 +457,39 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
   const [egHours,  setEgHours]  = useState(initialTimer?.egHours || 48);
   const [cfg,      setCfg]      = useState(initialTimer ? { ...DEFAULT_TIMER_CFG, ...initialTimer.cfg } : DEFAULT_TIMER_CFG);
 
-  const [saveStatus, setSaveStatus] = useState(""); // "saving"|"saved"|"error"
+  // null = new unsaved timer; number = saved DB id
+  const [savedId,    setSavedId]    = useState(initialTimer?.id ?? null);
+  const [saveStatus, setSaveStatus] = useState("");
   const [saveModal,  setSaveModal]  = useState(false);
+  const [pendingTab, setPendingTab] = useState(null); // tab to jump to after save
   const [copied,     setCopied]     = useState("");
 
-  const sc        = useCallback((k, v) => setCfg((c) => ({ ...c, [k]: v })), []);
-  const countUp   = mode === "countup";
-  const params    = buildParams(cfg, target, mode, egHours, timezone);
-  const copy      = useCallback((text, id) => {
+  const sc      = useCallback((k, v) => setCfg((c) => ({ ...c, [k]: v })), []);
+  const countUp = mode === "countup";
+
+  // Preview pane always uses live param URL (no save needed)
+  const previewParams   = buildParams(cfg, target, mode, egHours, timezone);
+  const previewEmbedUrl = `${API}/api/timer/embed?${previewParams}`;
+
+  // Shareable URLs — only available once saved
+  const shortGifUrl   = savedId ? timerGifUrl(savedId)   : null;
+  const shortEmbedUrl = savedId ? timerEmbedUrl(savedId) : null;
+  const shareLink     = savedId ? timerShareUrl(savedId) : null;
+  const qrUrl         = shareLink
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=${COLORS.accent.replace("#", "")}&qzone=2`
+    : null;
+
+  const imgTag = shortGifUrl
+    ? `<img src="${shortGifUrl}"\n  style="display:inline-block;line-height:0;width:100%;max-width:380px"\n  alt="${cfg.title || "Countdown Timer"}">`
+    : "";
+  const iframeTag = shortEmbedUrl
+    ? `<iframe src="${shortEmbedUrl}"\n  width="420" height="130"\n  frameborder="0" scrolling="no"\n  style="border:none;overflow:hidden;display:block">\n</iframe>`
+    : "";
+  const emailBlock = shortGifUrl
+    ? `<!-- ${cfg.title || "Countdown Timer"} -->\n<table cellpadding="0" cellspacing="0" border="0" align="center" width="100%">\n  <tr><td align="center" bgcolor="${cfg.bg}" style="padding:24px;border-radius:${cfg.borderRadius}px;">\n      <img src="${shortGifUrl}" style="display:inline-block;line-height:0;width:100%;max-width:380px" alt="${cfg.title || "Countdown Timer"}">\n  </td></tr>\n</table>`
+    : "";
+
+  const copy = useCallback((text, id) => {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopied(id);
     setTimeout(() => setCopied(""), 2200);
@@ -584,11 +497,7 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
 
   const currentPayload = (name) => ({ name, target, mode, egHours, timezone, cfg });
 
-  const flashStatus = (ok, savedObj) => {
-    setSaveStatus(ok ? "saved" : "error");
-    setTimeout(() => { setSaveStatus(""); if (ok && savedObj) onSaved(savedObj); }, 1200);
-  };
-
+  // Core save — used by header Save button
   const handleSaveNew = async (name) => {
     setSaveModal(false);
     setSaveStatus("saving");
@@ -599,8 +508,38 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
         body: JSON.stringify(currentPayload(name)),
       });
       if (!res.ok) throw new Error();
-      flashStatus(true, await res.json());
-    } catch { flashStatus(false); }
+      const saved = await res.json();
+      setSavedId(saved.id);
+      setSaveStatus("saved");
+      setTimeout(() => { setSaveStatus(""); onSaved(saved); }, 1200);
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus(""), 1200);
+    }
+  };
+
+  // Save triggered by clicking a locked tab — jumps to that tab after saving
+  const handleSaveNewFromTab = async (name) => {
+    setSaveModal(false);
+    setSaveStatus("saving");
+    try {
+      const res = await apiFetch(`${API}/api/timers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentPayload(name)),
+      });
+      if (!res.ok) throw new Error();
+      const saved = await res.json();
+      setSavedId(saved.id);
+      setSaveStatus("saved");
+      if (pendingTab) setTab(pendingTab);
+      setPendingTab(null);
+      setTimeout(() => { setSaveStatus(""); onSaved(saved); }, 1200);
+    } catch {
+      setSaveStatus("error");
+      setPendingTab(null);
+      setTimeout(() => setSaveStatus(""), 1200);
+    }
   };
 
   const handleUpdate = async () => {
@@ -613,19 +552,27 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
         body: JSON.stringify(currentPayload(initialTimer.name)),
       });
       if (!res.ok) throw new Error();
-      flashStatus(true, await res.json());
-    } catch { flashStatus(false); }
+      const saved = await res.json();
+      setSaveStatus("saved");
+      setTimeout(() => { setSaveStatus(""); onSaved(saved); }, 1200);
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus(""), 1200);
+    }
   };
 
-  const gifUrl    = `${API}/api/timer/gif?${params}`;
-  const embedUrl  = `${API}/api/timer/embed?${params}`;
-  const imgTag    = `<img src="${gifUrl}"\n  style="display:inline-block;line-height:0;width:100%;max-width:380px"\n  alt="${cfg.title || "Countdown Timer"}">`;
-  const iframeTag = `<iframe src="${embedUrl}"\n  width="420" height="130"\n  frameborder="0" scrolling="no"\n  style="border:none;overflow:hidden;display:block">\n</iframe>`;
-  const emailBlock = `<!-- ${cfg.title || "Countdown Timer"} -->\n<table cellpadding="0" cellspacing="0" border="0" align="center" width="100%">\n  <tr><td align="center" bgcolor="${cfg.bg}" style="padding:24px;border-radius:${cfg.borderRadius}px;">\n      <img src="${gifUrl}" style="display:inline-block;line-height:0;width:100%;max-width:380px" alt="${cfg.title || "Countdown Timer"}">\n  </td></tr>\n</table>`;
-  const shareLink = `${window.location.origin}/dashboard?${params}`;
-  const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=${COLORS.accent.replace("#", "")}&qzone=2`;
+  // Tab click: email/embed/share require a saved ID
+  const handleTabClick = (id) => {
+    if (["email", "embed", "share"].includes(id) && !savedId) {
+      setPendingTab(id);
+      setSaveModal(true);
+    } else {
+      setTab(id);
+    }
+  };
 
-  const saveBtnLabel = saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved!" : saveStatus === "error" ? "✗ Error" : (isNew ? "Save Timer" : "Save Changes");
+  const isSaved      = !!savedId;
+  const saveBtnLabel = saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved!" : saveStatus === "error" ? "✗ Error" : (!isSaved ? "Save Timer" : "Save Changes");
   const saveBtnBg    = saveStatus === "saved" ? "var(--color-green)" : saveStatus === "error" ? "var(--color-red)" : "var(--color-accent)";
 
   const TABS = [
@@ -655,57 +602,35 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
       `}</style>
 
       <Header user={user} serverOnline={serverOnline} onLogout={onLogout}>
-        {/* Back */}
-        <button
-          onClick={onBack}
-          className="bg-white text-[var(--color-mid)] border border-[var(--color-border)] rounded-lg px-3.5 py-[7px] text-xs font-semibold cursor-pointer font-[inherit] flex items-center gap-1.5"
-        >
+        <button onClick={onBack}
+          className="bg-white text-[var(--color-mid)] border border-[var(--color-border)] rounded-lg px-3.5 py-[7px] text-xs font-semibold cursor-pointer font-[inherit] flex items-center gap-1.5">
           ← My Timers
         </button>
-
-        {/* Context label */}
-        <div
-          className={`px-3 py-[5px] rounded-full text-[11px] font-bold border ${
-            isNew
-              ? "bg-[var(--color-purpleBg)] border-[var(--color-purpleBdr)] text-[var(--color-purple)]"
-              : "bg-[var(--color-amberBg)] border-[var(--color-amberBdr)] text-[var(--color-amber)]"
-          }`}
-        >
-          {isNew ? "✨ New Timer" : "✏️ Editing: " + initialTimer.name}
+        <div className={`px-3 py-[5px] rounded-full text-[11px] font-bold border ${
+          !isSaved
+            ? "bg-[var(--color-purpleBg)] border-[var(--color-purpleBdr)] text-[var(--color-purple)]"
+            : "bg-[var(--color-amberBg)] border-[var(--color-amberBdr)] text-[var(--color-amber)]"
+        }`}>
+          {!isSaved ? "✨ New Timer" : `✏️ Editing: ${initialTimer?.name ?? "Timer"}`}
         </div>
-
-        {/* Save */}
         <button
-          onClick={isNew ? () => setSaveModal(true) : handleUpdate}
+          onClick={!isSaved ? () => setSaveModal(true) : handleUpdate}
           disabled={saveStatus === "saving"}
           className="text-white border-none rounded-lg px-[18px] py-2 text-[13px] font-bold cursor-pointer font-[inherit] min-w-[120px] transition-colors duration-200"
-          style={{ background: saveBtnBg }}
-        >
+          style={{ background: saveBtnBg }}>
           {saveBtnLabel}
         </button>
       </Header>
 
-      {/* 2-column editor */}
       <div className="editor-body flex-1 flex overflow-hidden min-h-0">
 
         {/* Preview pane */}
-        <div
-          className="editor-preview flex-1 flex flex-col items-center justify-center gap-5 p-8 overflow-y-auto relative border-r border-[var(--color-border)]"
-          style={{ background: "linear-gradient(135deg,#eef2ff 0%,#f1f5f9 50%,#eff6ff 100%)" }}
-        >
-          {/* Dot grid bg */}
-          <div
-            className="absolute inset-0 opacity-25 pointer-events-none"
-            style={{
-              backgroundImage: "radial-gradient(circle,#c7d2fe 1px,transparent 1px)",
-              backgroundSize: "28px 28px",
-            }}
-          />
-
+        <div className="editor-preview flex-1 flex flex-col items-center justify-center gap-5 p-8 overflow-y-auto relative border-r border-[var(--color-border)]"
+          style={{ background: "linear-gradient(135deg,#eef2ff 0%,#f1f5f9 50%,#eff6ff 100%)" }}>
+          <div className="absolute inset-0 opacity-25 pointer-events-none"
+            style={{ backgroundImage: "radial-gradient(circle,#c7d2fe 1px,transparent 1px)", backgroundSize: "28px 28px" }} />
           <div className="relative z-10 text-center">
-            <div className="text-[var(--color-faint)] text-[10px] tracking-[0.25em] uppercase font-semibold mb-[18px]">
-              LIVE PREVIEW
-            </div>
+            <div className="text-[var(--color-faint)] text-[10px] tracking-[0.25em] uppercase font-semibold mb-[18px]">LIVE PREVIEW</div>
             <div className="bg-white rounded-2xl p-6 inline-block shadow-[var(--shadow-xl)]">
               <LiveClock target={target} mode={mode} countUp={countUp} egHours={egHours} cfg={cfg} />
             </div>
@@ -715,11 +640,11 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
               </div>
             )}
           </div>
-
           <div className="flex gap-2.5 flex-wrap justify-center relative z-10">
             {[
               { l: "Mode",     v: mode === "evergreen" ? "Evergreen ♻" : mode === "countup" ? "Count Up ↑" : "Countdown ↓" },
               { l: "Timezone", v: timezone.split("/").pop() },
+              { l: "ID",       v: savedId ? `#${savedId}` : "unsaved" },
             ].map((s) => (
               <div key={s.l} className="bg-white border border-[var(--color-border)] rounded-[9px] px-3.5 py-[7px] text-center shadow-[var(--shadow-sm)]">
                 <div className="text-[var(--color-faint)] text-[9px] uppercase tracking-[0.1em] font-semibold">{s.l}</div>
@@ -729,22 +654,21 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
           </div>
         </div>
 
-        {/* Settings sidebar */}
+        {/* Sidebar */}
         <div className="editor-sidebar w-[410px] flex flex-col bg-[var(--color-panel)] border-l border-[var(--color-border)] overflow-hidden flex-shrink-0">
-
-          {/* Tabs */}
           <div className="flex border-b border-[var(--color-border)] bg-[var(--color-card)] flex-shrink-0">
             {TABS.map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
+              <button key={id} onClick={() => handleTabClick(id)}
                 className={`flex-1 py-[11px] px-0.5 border-none cursor-pointer text-[10px] font-[inherit] transition-all duration-150 capitalize tracking-[0.03em] border-b-2
                   ${tab === id
                     ? "bg-[var(--color-panel)] text-[var(--color-accent)] font-bold border-[var(--color-accent)]"
                     : "bg-transparent text-[var(--color-muted)] font-medium border-transparent"
-                  }`}
-              >
+                  }`}>
                 {label}
+                {/* Lock badge on tabs that need a saved ID */}
+                {["email","embed","share"].includes(id) && !savedId && (
+                  <span className="ml-0.5 opacity-40">🔒</span>
+                )}
               </button>
             ))}
           </div>
@@ -755,21 +679,13 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
             {tab === "timer" && (
               <div>
                 <Field label="Event Title">
-                  <input
-                    value={cfg.title}
-                    onChange={(e) => sc("title", e.target.value)}
-                    className={inputCls()}
-                    placeholder="OFFER ENDS IN"
-                  />
+                  <input value={cfg.title} onChange={(e) => sc("title", e.target.value)}
+                    className={inputCls()} placeholder="OFFER ENDS IN" />
                 </Field>
                 <Field label="Target Date & Time">
-                  <input
-                    type="datetime-local"
-                    value={target}
-                    onChange={(e) => setTarget(e.target.value)}
+                  <input type="datetime-local" value={target} onChange={(e) => setTarget(e.target.value)}
                     className={`${inputCls()} ${mode === "evergreen" ? "opacity-40" : ""}`}
-                    disabled={mode === "evergreen"}
-                  />
+                    disabled={mode === "evergreen"} />
                 </Field>
                 <Field label="Timezone">
                   <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls()}>
@@ -796,12 +712,8 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                   <div className="grid grid-cols-2 gap-2">
                     {[["showDays","Days"],["showHours","Hours"],["showMinutes","Minutes"],["showSeconds","Seconds"]].map(([k, l]) => (
                       <label key={k} className="flex items-center gap-2 cursor-pointer px-[11px] py-[9px] bg-white border border-[var(--color-border)] rounded-[7px]">
-                        <input
-                          type="checkbox"
-                          checked={cfg[k]}
-                          onChange={(e) => sc(k, e.target.checked)}
-                          className="w-[15px] h-[15px] cursor-pointer accent-[var(--color-accent)]"
-                        />
+                        <input type="checkbox" checked={cfg[k]} onChange={(e) => sc(k, e.target.checked)}
+                          className="w-[15px] h-[15px] cursor-pointer accent-[var(--color-accent)]" />
                         <span className="text-[var(--color-mid)] text-xs font-medium">{l}</span>
                       </label>
                     ))}
@@ -816,12 +728,10 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                 <Lbl>Templates</Lbl>
                 <div className="grid grid-cols-3 gap-2 mb-[18px]">
                   {TIMER_TEMPLATES.map((t) => (
-                    <div
-                      key={t.name}
+                    <div key={t.name}
                       onClick={() => setCfg((c) => ({ ...c, bg: t.bg, box: t.box, text: t.text, accent: t.accent }))}
                       className="p-2.5 rounded-[9px] cursor-pointer text-center shadow-[0_1px_4px_rgba(0,0,0,.12)]"
-                      style={{ background: t.bg, border: `2px solid ${t.accent}55` }}
-                    >
+                      style={{ background: t.bg, border: `2px solid ${t.accent}55` }}>
                       <div className="text-[10px] font-bold mb-[5px]" style={{ color: t.text }}>{t.name}</div>
                       <div className="flex gap-[3px] justify-center">
                         {[t.bg, t.box, t.text, t.accent].map((c, i) => (
@@ -831,53 +741,34 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                     </div>
                   ))}
                 </div>
-
                 <Card>
                   <Lbl>Colors</Lbl>
                   {[["bg","Background"],["box","Number Box"],["text","Text"],["accent","Accent"]].map(([k, l]) => (
                     <div key={k} className="flex items-center gap-2.5 mb-3">
-                      <input
-                        type="color"
-                        value={cfg[k]}
-                        onChange={(e) => sc(k, e.target.value)}
-                        className="w-9 h-9 border border-[var(--color-border)] rounded-[7px] p-0.5 flex-shrink-0"
-                      />
+                      <input type="color" value={cfg[k]} onChange={(e) => sc(k, e.target.value)}
+                        className="w-9 h-9 border border-[var(--color-border)] rounded-[7px] p-0.5 flex-shrink-0" />
                       <span className="text-[var(--color-mid)] text-xs font-medium flex-1">{l}</span>
-                      <code className="text-[var(--color-muted)] text-[10px] bg-[var(--color-card)] px-[7px] py-[2px] rounded border border-[var(--color-border)] font-mono">
-                        {cfg[k]}
-                      </code>
+                      <code className="text-[var(--color-muted)] text-[10px] bg-[var(--color-card)] px-[7px] py-[2px] rounded border border-[var(--color-border)] font-mono">{cfg[k]}</code>
                     </div>
                   ))}
                 </Card>
-
                 <Field label="Font">
-                  <select
-                    value={cfg.font}
-                    onChange={(e) => sc("font", e.target.value)}
-                    className={inputCls()}
-                    style={{ fontFamily: `'${cfg.font}', monospace` }}
-                  >
+                  <select value={cfg.font} onChange={(e) => sc("font", e.target.value)}
+                    className={inputCls()} style={{ fontFamily: `'${cfg.font}', monospace` }}>
                     {TYPOGRAPHY.timerFonts.map((f) => (
                       <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                     ))}
                   </select>
                 </Field>
-
                 <Field label={`Font Size: ${cfg.fontSize}px`} mb="mb-3.5">
                   <input type="range" min={18} max={48} value={cfg.fontSize} onChange={(e) => sc("fontSize", +e.target.value)} />
                 </Field>
-
                 <Field label={`Corner Radius: ${cfg.borderRadius}px`} mb="mb-3.5">
                   <input type="range" min={0} max={32} value={cfg.borderRadius} onChange={(e) => sc("borderRadius", +e.target.value)} />
                 </Field>
-
                 <label className="flex items-center gap-[9px] cursor-pointer px-[13px] py-2.5 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg mb-3.5">
-                  <input
-                    type="checkbox"
-                    checked={cfg.transparent}
-                    onChange={(e) => sc("transparent", e.target.checked)}
-                    className="w-[15px] h-[15px] cursor-pointer accent-[var(--color-accent)]"
-                  />
+                  <input type="checkbox" checked={cfg.transparent} onChange={(e) => sc("transparent", e.target.checked)}
+                    className="w-[15px] h-[15px] cursor-pointer accent-[var(--color-accent)]" />
                   <span className="text-[var(--color-mid)] text-xs font-medium">Transparent Background</span>
                 </label>
               </div>
@@ -886,96 +777,102 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
             {/* ── Email tab ── */}
             {tab === "email" && (
               <div>
-                <InfoBox colorVar="accent" bgVar="accentBg" borderVar="accentBdr" title="📧 Email Countdown GIF">
-                  Paste the img tag into your email. A fresh animated GIF is generated on every open.
-                </InfoBox>
-                {serverOnline && (
-                  <Card>
-                    <Lbl>Live GIF Preview</Lbl>
-                    <div className="bg-[#111] rounded-lg p-3 text-center mb-2">
-                      <img key={params} src={gifUrl} alt="Timer GIF" className="max-w-full rounded-[6px] block mx-auto" />
-                    </div>
-                  </Card>
-                )}
-                <CodeBox code={imgTag}     cid="img"   copied={copied} copy={copy} label="📋 Paste into Email" />
-                <CodeBox code={emailBlock} cid="email" copied={copied} copy={copy} label="Full HTML Email Block" />
-                <InfoBox colorVar="amber" bgVar="amberBg" borderVar="amberBdr" title="🍎 Apple Mail / MPP Note">
-                  Apple Mail pre-fetches images which can freeze the GIF. The block above includes an MSO fallback.
-                </InfoBox>
+                {!savedId
+                  ? <UnsavedNudge onSave={() => setSaveModal(true)} />
+                  : <>
+                    <InfoBox colorVar="accent" bgVar="accentBg" borderVar="accentBdr" title="📧 Email Countdown GIF">
+                      Paste the img tag into your email. A fresh animated GIF is generated on every open.
+                    </InfoBox>
+                    {serverOnline && (
+                      <Card>
+                        <Lbl>Live GIF Preview</Lbl>
+                        <div className="bg-[#111] rounded-lg p-3 text-center mb-2">
+                          <img key={savedId} src={shortGifUrl} alt="Timer GIF" className="max-w-full rounded-[6px] block mx-auto" />
+                        </div>
+                      </Card>
+                    )}
+                    <CodeBox code={imgTag}     cid="img"   copied={copied} copy={copy} label="📋 Paste into Email" />
+                    <CodeBox code={emailBlock} cid="email" copied={copied} copy={copy} label="Full HTML Email Block" />
+                    <InfoBox colorVar="amber" bgVar="amberBg" borderVar="amberBdr" title="🍎 Apple Mail / MPP Note">
+                      Apple Mail pre-fetches images which can freeze the GIF. The block above includes an MSO fallback.
+                    </InfoBox>
+                  </>
+                }
               </div>
             )}
 
             {/* ── Embed tab ── */}
             {tab === "embed" && (
               <div>
-                <InfoBox colorVar="blue" bgVar="blueBg" borderVar="blueBdr" title="🌐 Website iFrame Embed">
-                  Drop the iframe anywhere on your site for a live JS countdown.
-                </InfoBox>
-                {serverOnline && (
-                  <Card>
-                    <Lbl>Live Embed Preview</Lbl>
-                    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden h-[130px]" style={{ background: cfg.bg }}>
-                      <iframe key={params} src={embedUrl} className="w-full h-full border-none block" title="Timer Embed" />
-                    </div>
-                  </Card>
-                )}
-                <CodeBox code={iframeTag} cid="iframe" copied={copied} copy={copy} label="📋 Paste into Website" />
-                <Card>
-                  <Lbl>Direct embed URL</Lbl>
-                  <div className="flex gap-2 items-center">
-                    <input readOnly value={embedUrl} className={`${inputCls()} text-[10px] text-[var(--color-muted)] bg-[var(--color-card)] flex-1`} />
-                    <button
-                      onClick={() => copy(embedUrl, "eu")}
-                      className={`text-white border-none rounded-[6px] px-3 py-2 text-[11px] cursor-pointer font-bold whitespace-nowrap flex-shrink-0 font-[inherit]
-                        ${copied === "eu" ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}
-                    >
-                      {copied === "eu" ? "✓ Copied" : "Copy"}
-                    </button>
-                  </div>
-                </Card>
+                {!savedId
+                  ? <UnsavedNudge onSave={() => setSaveModal(true)} />
+                  : <>
+                    <InfoBox colorVar="blue" bgVar="blueBg" borderVar="blueBdr" title="🌐 Website iFrame Embed">
+                      Drop the iframe anywhere on your site for a live JS countdown.
+                    </InfoBox>
+                    {serverOnline && (
+                      <Card>
+                        <Lbl>Live Embed Preview</Lbl>
+                        <div className="border border-[var(--color-border)] rounded-lg overflow-hidden h-[130px]" style={{ background: cfg.bg }}>
+                          <iframe key={savedId} src={shortEmbedUrl} className="w-full h-full border-none block" title="Timer Embed" />
+                        </div>
+                      </Card>
+                    )}
+                    <CodeBox code={iframeTag} cid="iframe" copied={copied} copy={copy} label="📋 Paste into Website" />
+                    <Card>
+                      <Lbl>Direct embed URL</Lbl>
+                      <div className="flex gap-2 items-center">
+                        <input readOnly value={shortEmbedUrl}
+                          className={`${inputCls()} text-[10px] text-[var(--color-muted)] bg-[var(--color-card)] flex-1`} />
+                        <button onClick={() => copy(shortEmbedUrl, "eu")}
+                          className={`text-white border-none rounded-[6px] px-3 py-2 text-[11px] cursor-pointer font-bold whitespace-nowrap flex-shrink-0 font-[inherit]
+                            ${copied === "eu" ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}>
+                          {copied === "eu" ? "✓ Copied" : "Copy"}
+                        </button>
+                      </div>
+                    </Card>
+                  </>
+                }
               </div>
             )}
 
             {/* ── Share tab ── */}
             {tab === "share" && (
               <div>
-                <Lbl>Share Link</Lbl>
-                <div className="flex gap-2 mb-4 items-stretch">
-                  <input value={shareLink} readOnly className={`${inputCls()} flex-1 text-[10px] text-[var(--color-muted)] bg-[var(--color-card)]`} />
-                  <button
-                    onClick={() => copy(shareLink, "sl")}
-                    className={`text-white border-none rounded-[7px] px-3.5 py-2 text-[11px] cursor-pointer font-bold whitespace-nowrap flex-shrink-0 font-[inherit]
-                      ${copied === "sl" ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}
-                  >
-                    {copied === "sl" ? "✓ Copied" : "Copy"}
-                  </button>
-                </div>
-
-                <Lbl>QR Code</Lbl>
-                <div className="bg-white border border-[var(--color-border)] rounded-[10px] p-5 text-center mb-4">
-                  <img src={qrUrl} alt="QR" width={150} height={150} className="rounded-lg block mx-auto" />
-                  <div className="text-[var(--color-muted)] text-[11px] mt-2.5 font-medium">Scan to open countdown</div>
-                </div>
-
-                <Lbl>Share to Social</Lbl>
-                {[
-                  { name: "Twitter / X", color: "#1da1f2", url: `https://twitter.com/intent/tweet?text=${encodeURIComponent("⏱ " + cfg.title + " " + shareLink)}` },
-                  { name: "Facebook",    color: "#1877f2", url: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareLink)}` },
-                  { name: "WhatsApp",    color: "#25d366", url: `https://wa.me/?text=${encodeURIComponent("⏱ " + cfg.title + " " + shareLink)}` },
-                  { name: "LinkedIn",    color: "#0a66c2", url: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareLink)}` },
-                ].map((s) => (
-                  <a
-                    key={s.name}
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white border-[1.5px] border-[var(--color-border)] rounded-lg mb-2 no-underline text-xs font-semibold transition-colors"
-                    style={{ color: s.color }}
-                  >
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
-                    Share on {s.name} ↗
-                  </a>
-                ))}
+                {!savedId
+                  ? <UnsavedNudge onSave={() => setSaveModal(true)} />
+                  : <>
+                    <Lbl>Share Link</Lbl>
+                    <div className="flex gap-2 mb-4 items-stretch">
+                      <input value={shareLink} readOnly
+                        className={`${inputCls()} flex-1 text-[10px] text-[var(--color-muted)] bg-[var(--color-card)]`} />
+                      <button onClick={() => copy(shareLink, "sl")}
+                        className={`text-white border-none rounded-[7px] px-3.5 py-2 text-[11px] cursor-pointer font-bold whitespace-nowrap flex-shrink-0 font-[inherit]
+                          ${copied === "sl" ? "bg-[var(--color-green)]" : "bg-[var(--color-accent)]"}`}>
+                        {copied === "sl" ? "✓ Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <Lbl>QR Code</Lbl>
+                    <div className="bg-white border border-[var(--color-border)] rounded-[10px] p-5 text-center mb-4">
+                      <img src={qrUrl} alt="QR" width={150} height={150} className="rounded-lg block mx-auto" />
+                      <div className="text-[var(--color-muted)] text-[11px] mt-2.5 font-medium">Scan to open countdown</div>
+                    </div>
+                    <Lbl>Share to Social</Lbl>
+                    {[
+                      { name: "Twitter / X", color: "#1da1f2", url: `https://twitter.com/intent/tweet?text=${encodeURIComponent("⏱ " + cfg.title + " " + shareLink)}` },
+                      { name: "Facebook",    color: "#1877f2", url: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareLink)}` },
+                      { name: "WhatsApp",    color: "#25d366", url: `https://wa.me/?text=${encodeURIComponent("⏱ " + cfg.title + " " + shareLink)}` },
+                      { name: "LinkedIn",    color: "#0a66c2", url: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareLink)}` },
+                    ].map((s) => (
+                      <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white border-[1.5px] border-[var(--color-border)] rounded-lg mb-2 no-underline text-xs font-semibold transition-colors"
+                        style={{ color: s.color }}>
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                        Share on {s.name} ↗
+                      </a>
+                    ))}
+                  </>
+                }
               </div>
             )}
 
@@ -988,25 +885,22 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
           title="Save Timer"
           description="Give this timer a name so you can find it later."
           confirmLabel="Save Timer"
-          onConfirm={handleSaveNew}
-          onClose={() => setSaveModal(false)}
-        />
+          onConfirm={pendingTab ? handleSaveNewFromTab : handleSaveNew}
+          onClose={() => { setSaveModal(false); setPendingTab(null); }} />
       )}
     </div>
   );
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user,         setUser]         = useState(null);
   const [timers,       setTimers]       = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [serverOnline, setServerOnline] = useState(null);
-  const [screen,       setScreen]       = useState("home"); // "home" | "new" | {timer}
+  const [screen,       setScreen]       = useState("home");
 
-  // Auth
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
     if (!token) { navigate("/login"); return; }
@@ -1016,14 +910,12 @@ export default function Dashboard() {
 
   const handleLogout = () => { localStorage.removeItem("accessToken"); navigate("/login"); };
 
-  // Health
   useEffect(() => {
     fetch(`${API}/health`)
       .then((r) => r.ok ? setServerOnline(true) : setServerOnline(false))
       .catch(() => setServerOnline(false));
   }, []);
 
-  // Fetch timers
   useEffect(() => {
     if (!user) return;
     setLoading(true);
@@ -1034,7 +926,6 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, [user]);
 
-  // Delete
   const handleDelete = async (timer) => {
     try {
       await apiFetch(`${API}/api/timers/${timer.id}`, { method: "DELETE" });
@@ -1042,7 +933,6 @@ export default function Dashboard() {
     } catch { /* silent */ }
   };
 
-  // After save/update → update list and go home
   const handleSaved = (savedTimer) => {
     setTimers((prev) => {
       const exists = prev.find((t) => t.id === savedTimer.id);
@@ -1064,26 +954,16 @@ export default function Dashboard() {
   if (screen === "home") {
     return (
       <HomeScreen
-        user={user}
-        serverOnline={serverOnline}
-        timers={timers}
-        loading={loading}
-        onNew={() => setScreen("new")}
-        onEdit={(timer) => setScreen(timer)}
-        onDelete={handleDelete}
-        onLogout={handleLogout}
-      />
+        user={user} serverOnline={serverOnline} timers={timers} loading={loading}
+        onNew={() => setScreen("new")} onEdit={(timer) => setScreen(timer)}
+        onDelete={handleDelete} onLogout={handleLogout} />
     );
   }
 
   return (
     <EditorScreen
-      user={user}
-      serverOnline={serverOnline}
+      user={user} serverOnline={serverOnline}
       initialTimer={screen === "new" ? null : screen}
-      onSaved={handleSaved}
-      onBack={() => setScreen("home")}
-      onLogout={handleLogout}
-    />
+      onSaved={handleSaved} onBack={() => setScreen("home")} onLogout={handleLogout} />
   );
 }
