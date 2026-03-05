@@ -1,19 +1,14 @@
-// timer.js
-const express        = require("express");
+const express          = require("express");
 const { createCanvas } = require("canvas");
-const GIFEncoder     = require("gifencoder");
+const GIFEncoder       = require("gifencoder");
 const { fromZonedTime } = require("date-fns-tz");
 
 const router = express.Router();
 
-/* ─── GIF cache ──────────────────────────────────────────────────────────── *
- * Keyed by timer id (short URLs) or param string hash (long /gif?... URL).
- * TTL = 58s so cache turns over just before each new minute.
- * Call gifCache.delete(id) from timers PUT/DELETE routes to bust on save.
- * ─────────────────────────────────────────────────────────────────────────── */
-const gifCache  = new Map();   // key → { buf: Buffer, ts: number }
-const CACHE_TTL = 58_000;      // 58s — re-render just before each new minute
-const STALE_AT  = 45_000;      // start background re-render at 45s so it's ready
+/* ─── GIF cache ───────────────────────────────────────────────────────────── */
+const gifCache  = new Map();
+const CACHE_TTL = 58_000;
+const STALE_AT  = 45_000;
 
 function renderGifBuffer(p) {
   return new Promise((resolve, reject) => {
@@ -47,26 +42,17 @@ function renderGifBuffer(p) {
   });
 }
 
-/**
- * Serve from cache if available (stale-while-revalidate).
- * - Always returns cached buf immediately if it exists.
- * - Triggers a background re-render once cache is 45s old.
- * - Only blocks the request if there is no cache at all.
- */
 async function serveGif(res, cacheKey, p) {
   const cached = gifCache.get(cacheKey);
   if (cached) {
     const age = Date.now() - cached.ts;
-    // Background refresh — doesn't block response
     if (age > STALE_AT) {
       renderGifBuffer(p)
         .then(buf => gifCache.set(cacheKey, { buf, ts: Date.now() }))
         .catch(console.error);
     }
-    // Still within TTL — serve immediately
     if (age < CACHE_TTL) return sendGif(res, cached.buf);
   }
-  // No cache or fully expired — render and wait
   const buf = await renderGifBuffer(p);
   gifCache.set(cacheKey, { buf, ts: Date.now() });
   sendGif(res, buf);
@@ -82,9 +68,9 @@ function sendGif(res, buf) {
   res.end(buf);
 }
 
-module.exports.gifCache = gifCache; // export so timers.js can bust on save
+module.exports.gifCache = gifCache;
 
-/* ─── helpers ────────────────────────────────────────────────────────────── */
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
 function pad(n) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
@@ -93,26 +79,15 @@ function parseColor(raw) {
   return raw.startsWith("#") ? raw : "#" + raw;
 }
 
-/**
- * Convert a naive datetime-local string ("2026-03-20T18:00") plus a
- * timezone name ("Asia/Karachi") into a real UTC Date object.
- *
- * If the target already looks like a full ISO string with offset (contains
- * "Z" or "+") we use it directly — no conversion needed.
- */
 function resolveTarget(target, timezone) {
   if (!target) return new Date(Date.now() + 7 * 86400000);
-
-  // Already has timezone info — use as-is
   if (target.includes("Z") || target.includes("+") || target.includes("-", 10)) {
     return new Date(target);
   }
-
-  // Naive datetime-local string — interpret it in the given timezone
   try {
     return fromZonedTime(target, timezone || "UTC");
   } catch {
-    return new Date(target); // fallback: treat as UTC
+    return new Date(target);
   }
 }
 
@@ -121,12 +96,10 @@ function calcTime(target, timezone, mode, countUp, egHours) {
     const h = Number(egHours) || 48;
     return { days: Math.floor(h / 24), hours: h % 24, minutes: 0, seconds: 0, done: false };
   }
-
   const targetDate = resolveTarget(target, timezone);
   let diff = targetDate - new Date();
   if (countUp) diff = -diff;
   if (diff < 0) diff = 0;
-
   return {
     days:    Math.floor(diff / 86400000),
     hours:   Math.floor((diff % 86400000) / 3600000),
@@ -141,7 +114,7 @@ function parseParams(q) {
     target:       q.target      || new Date(Date.now() + 7 * 86400000).toISOString(),
     timezone:     q.timezone    || "UTC",
     mode:         q.mode        || "countdown",
-    countUp:      q.countUp === "1" || q.countUp === "true",
+    countUp:      q.countUp === "1" || q.countUp === "true" || q.mode === "countup",
     egHours:      parseInt(q.egHours) || 48,
     bg:           parseColor(q.bg     || "0f0f1a"),
     box:          parseColor(q.box    || "1e1b4b"),
@@ -155,7 +128,7 @@ function parseParams(q) {
     showHours:    q.hours   !== "0",
     showMinutes:  q.minutes !== "0",
     showSeconds:  q.seconds !== "0",
-    // Render at 600px wide (standard email width) — scales down beautifully on all screens
+    visualStyle:  q.visualStyle || "default",   // ← new
     width:        parseInt(q.width)  || 600,
     height:       parseInt(q.height) || 160,
   };
@@ -175,13 +148,217 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+/* ─── Visual Style definitions (canvas port of frontend VISUAL_STYLES) ────
+ *
+ * Each style returns drawing instructions for:
+ *   drawWrapper  – called before any boxes (background + outer border)
+ *   drawBox      – called per number box
+ *   drawLabel    – called per unit label (DAYS/HRS/MIN/SEC)
+ *   drawSep      – called per ":" separator
+ *   drawTitle    – called for the title row
+ *
+ * All functions receive (ctx, params…) and mutate ctx directly.
+ * ─────────────────────────────────────────────────────────────────────────── */
+const CANVAS_STYLES = {
+
+  // 1. Default — flat dark boxes, subtle glow
+  default: {
+    drawWrapper(ctx, W, H, p) {
+      if (!p.transparent) {
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(0, 0, W, H);
+      } else {
+        ctx.clearRect(0, 0, W, H);
+      }
+    },
+    drawBox(ctx, x, y, bW, bH, br, p) {
+      // shadow
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      roundRect(ctx, x + 3, y + 3, bW, bH, br); ctx.fill();
+      // fill
+      ctx.fillStyle = p.box;
+      roundRect(ctx, x, y, bW, bH, br); ctx.fill();
+      // border glow
+      ctx.strokeStyle = p.accent + "66"; ctx.lineWidth = 2;
+      roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
+    },
+    labelColor: (p) => p.textColor,
+    labelAlpha: 0.55,
+    sepAlpha:   0.65,
+    sepColor:   (p) => p.accent,
+  },
+
+  // 2. Neon — glowing outlines, no fill, electric
+  neon: {
+    drawWrapper(ctx, W, H, p) {
+      ctx.clearRect(0, 0, W, H);
+      if (!p.transparent) {
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(0, 0, W, H);
+      }
+      // outer glow border
+      ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
+      ctx.shadowColor = p.accent; ctx.shadowBlur  = 18;
+      roundRect(ctx, 2, 2, W - 4, H - 4, p.borderRadius);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    },
+    drawBox(ctx, x, y, bW, bH, br, p) {
+      // semi-transparent fill
+      ctx.fillStyle = p.accent + "18";
+      roundRect(ctx, x, y, bW, bH, br); ctx.fill();
+      // glowing border
+      ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
+      ctx.shadowColor = p.accent; ctx.shadowBlur  = 10;
+      roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
+      ctx.shadowBlur  = 0;
+    },
+    labelColor: (p) => p.accent,
+    labelAlpha: 0.85,
+    sepAlpha:   1,
+    sepColor:   (p) => p.accent,
+    numberColor:(p) => p.accent,   // override number colour
+    numberShadow:(ctx, p) => { ctx.shadowColor = p.accent; ctx.shadowBlur = 8; },
+  },
+
+  // 3. Minimal — no box, bottom border only
+  minimal: {
+    drawWrapper(ctx, W, H, p) {
+      ctx.clearRect(0, 0, W, H);
+      if (!p.transparent) {
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(0, 0, W, H);
+      }
+      // bottom border line
+      ctx.strokeStyle = p.accent + "55"; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(20, H - 2); ctx.lineTo(W - 20, H - 2);
+      ctx.stroke();
+    },
+    drawBox(ctx, x, y, bW, bH, br, p) {
+      // no background — just bottom border
+      ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y + bH); ctx.lineTo(x + bW, y + bH);
+      ctx.stroke();
+    },
+    labelColor: (p) => p.textColor,
+    labelAlpha: 0.4,
+    sepAlpha:   0.3,
+    sepColor:   (p) => p.accent,
+  },
+
+  // 4. Glass — frosted translucent boxes
+  glass: {
+    drawWrapper(ctx, W, H, p) {
+      ctx.clearRect(0, 0, W, H);
+      if (!p.transparent) {
+        // slightly transparent bg
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle   = p.bg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      }
+      // thin soft border
+      ctx.strokeStyle = p.textColor + "18"; ctx.lineWidth = 1;
+      roundRect(ctx, 1, 1, W - 2, H - 2, p.borderRadius);
+      ctx.stroke();
+    },
+    drawBox(ctx, x, y, bW, bH, br, p) {
+      // glass fill
+      ctx.fillStyle   = p.textColor + "0d";
+      roundRect(ctx, x, y, bW, bH, br); ctx.fill();
+      // inner highlight top edge
+      ctx.strokeStyle = p.textColor + "22"; ctx.lineWidth = 1;
+      roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
+      // soft drop shadow
+      ctx.fillStyle   = "rgba(0,0,0,0.15)";
+      roundRect(ctx, x + 2, y + 3, bW, bH, br); ctx.fill();
+      // re-draw box on top of shadow
+      ctx.fillStyle   = p.textColor + "0d";
+      roundRect(ctx, x, y, bW, bH, br); ctx.fill();
+    },
+    labelColor: (p) => p.textColor,
+    labelAlpha: 0.45,
+    sepAlpha:   0.25,
+    sepColor:   (p) => p.textColor,
+  },
+
+  // 5. Retro — thick borders, hard shadow, no radius
+  retro: {
+    drawWrapper(ctx, W, H, p) {
+      ctx.clearRect(0, 0, W, H);
+      if (!p.transparent) {
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(0, 0, W, H);
+      }
+      // thick outer border
+      ctx.strokeStyle = p.accent; ctx.lineWidth = 4;
+      ctx.strokeRect(4, 4, W - 8, H - 8);
+      // hard drop shadow offset
+      ctx.strokeStyle = p.accent + "88"; ctx.lineWidth = 4;
+      ctx.strokeRect(8, 8, W - 8, H - 8);
+    },
+    drawBox(ctx, x, y, bW, bH, _br, p) {
+      // hard shadow
+      ctx.fillStyle = p.accent + "88";
+      ctx.fillRect(x + 3, y + 3, bW, bH);
+      // flat fill, no radius
+      ctx.fillStyle = p.box;
+      ctx.fillRect(x, y, bW, bH);
+      // thick border
+      ctx.strokeStyle = p.accent; ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, bW, bH);
+    },
+    labelColor: (p) => p.accent,
+    labelAlpha: 1,
+    sepAlpha:   1,
+    sepColor:   (p) => p.accent,
+    boxRadius:  0,   // override borderRadius to 0
+  },
+
+  // 6. Soft — pill boxes, gradient fill, large radius
+  soft: {
+    drawWrapper(ctx, W, H, p) {
+      ctx.clearRect(0, 0, W, H);
+      if (!p.transparent) {
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(0, 0, W, H);
+      }
+      // soft glow border
+      ctx.strokeStyle = p.accent + "33"; ctx.lineWidth = 1;
+      ctx.shadowColor = p.accent + "22"; ctx.shadowBlur  = 24;
+      roundRect(ctx, 1, 1, W - 2, H - 2, 28);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    },
+    drawBox(ctx, x, y, bW, bH, _br, p) {
+      const br = bH / 2; // pill shape
+      // gradient fill
+      const grad = ctx.createLinearGradient(x, y, x + bW, y + bH);
+      grad.addColorStop(0, p.box);
+      grad.addColorStop(1, p.accent + "66");
+      // soft shadow
+      ctx.fillStyle = p.accent + "33";
+      roundRect(ctx, x + 2, y + 4, bW, bH, br); ctx.fill();
+      // box
+      ctx.fillStyle = grad;
+      roundRect(ctx, x, y, bW, bH, br); ctx.fill();
+    },
+    labelColor: (p) => p.accent,
+    labelAlpha: 0.8,
+    sepAlpha:   0.5,
+    sepColor:   (p) => p.accent,
+    boxRadius:  999,
+  },
+};
+
+/* ─── drawFrame ───────────────────────────────────────────────────────────── */
 function drawFrame(ctx, W, H, timeObj, p) {
-  if (p.transparent) {
-    ctx.clearRect(0, 0, W, H);
-  } else {
-    ctx.fillStyle = p.bg;
-    ctx.fillRect(0, 0, W, H);
-  }
+  const style = CANVAS_STYLES[p.visualStyle] || CANVAS_STYLES.default;
+
+  // 1. Wrapper / background
+  style.drawWrapper(ctx, W, H, p);
 
   const units = [
     p.showDays    && { lbl: "DAYS", val: pad(timeObj.days)    },
@@ -193,32 +370,39 @@ function drawFrame(ctx, W, H, timeObj, p) {
   if (!units.length) return;
 
   const titleH   = p.title ? 28 : 0;
-  const padding  = 24;                        // breathing room each side
+  const padding  = 24;
   const maxInner = W - padding * 2;
   const gap      = Math.max(6, Math.min(16, Math.floor(maxInner / (units.length * 10))));
   let   boxW     = p.fontSize * 2.4;
   const maxBoxW  = Math.floor((maxInner - gap * (units.length - 1)) / units.length);
   boxW           = Math.min(boxW, maxBoxW);
   const fs       = Math.min(p.fontSize, Math.floor(boxW / 2.4));
-  const innerBoxH = fs * 1.5;                 // the coloured box height (no label)
-  const labelH   = 18;                        // DAYS / HRS / MIN / SEC label area
+  const innerBoxH = fs * 1.5;
+  const labelH   = 18;
   const totalH   = titleH + innerBoxH + labelH;
   const totalW   = units.length * (boxW + gap) - gap;
   const sx       = (W - totalW) / 2;
   const sy       = Math.max(titleH + 8, (H - totalH) / 2 + titleH);
 
-  // Title
+  // Use style's boxRadius override if present (e.g. retro=0, soft=pill)
+  const br = style.boxRadius !== undefined
+    ? style.boxRadius
+    : Math.min(p.borderRadius, Math.floor(innerBoxH / 4));
+
+  // 2. Title
   if (p.title) {
-    ctx.fillStyle    = p.textColor;
-    ctx.globalAlpha  = 0.9;
+    ctx.fillStyle    = style.titleColor ? style.titleColor(p) : p.textColor;
+    ctx.globalAlpha  = style.titleAlpha !== undefined ? style.titleAlpha : 0.9;
     ctx.font         = `bold ${Math.round(fs * 0.3)}px monospace`;
     ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
+    if (style.titleShadow) style.titleShadow(ctx, p);
     ctx.fillText(p.title.toUpperCase(), W / 2, sy - titleH / 2 - 2);
-    ctx.globalAlpha  = 1;
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
   }
 
-  // EXPIRED state
+  // 3. Expired
   if (timeObj.done) {
     ctx.fillStyle    = p.accent;
     ctx.font         = `bold ${Math.round(fs * 0.7)}px monospace`;
@@ -228,57 +412,52 @@ function drawFrame(ctx, W, H, timeObj, p) {
     return;
   }
 
+  // 4. Boxes, numbers, labels, separators
   units.forEach(({ lbl, val }, i) => {
-    const x  = sx + i * (boxW + gap);
-    const y  = sy;
-    const br = Math.min(p.borderRadius, Math.floor(innerBoxH / 4));
+    const x = sx + i * (boxW + gap);
+    const y = sy;
 
-    // Drop shadow
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    roundRect(ctx, x + 3, y + 3, boxW, innerBoxH, br);
-    ctx.fill();
-
-    // Box background
-    ctx.fillStyle = p.box;
-    roundRect(ctx, x, y, boxW, innerBoxH, br);
-    ctx.fill();
-
-    // Box border / glow
-    ctx.strokeStyle = p.accent + "66";
-    ctx.lineWidth   = 2;
-    roundRect(ctx, x, y, boxW, innerBoxH, br);
-    ctx.stroke();
+    // Draw box background via style
+    ctx.save();
+    style.drawBox(ctx, x, y, boxW, innerBoxH, br, p);
+    ctx.restore();
 
     // Number
-    ctx.fillStyle    = p.textColor;
+    const numColor = style.numberColor ? style.numberColor(p) : p.textColor;
+    ctx.fillStyle    = numColor;
+    ctx.globalAlpha  = 1;
     ctx.font         = `bold ${fs}px monospace`;
     ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
+    if (style.numberShadow) style.numberShadow(ctx, p);
     ctx.fillText(val, x + boxW / 2, y + innerBoxH / 2);
+    ctx.shadowBlur  = 0;
 
-    // Label below box
-    ctx.fillStyle    = p.textColor;
-    ctx.globalAlpha  = 0.55;
+    // Label
+    ctx.fillStyle    = style.labelColor(p);
+    ctx.globalAlpha  = style.labelAlpha !== undefined ? style.labelAlpha : 0.55;
     ctx.font         = `bold ${Math.round(fs * 0.25)}px monospace`;
     ctx.textAlign    = "center";
     ctx.textBaseline = "top";
     ctx.fillText(lbl, x + boxW / 2, y + innerBoxH + 5);
     ctx.globalAlpha  = 1;
 
-    // Separator colon between boxes
+    // Separator
     if (i < units.length - 1) {
-      ctx.fillStyle    = p.accent;
-      ctx.globalAlpha  = 0.75;
+      ctx.fillStyle    = style.sepColor(p);
+      ctx.globalAlpha  = style.sepAlpha !== undefined ? style.sepAlpha : 0.65;
       ctx.font         = `bold ${Math.round(fs * 0.7)}px monospace`;
       ctx.textAlign    = "center";
       ctx.textBaseline = "middle";
+      if (style.sepShadow) style.sepShadow(ctx, p);
       ctx.fillText(":", x + boxW + gap / 2, y + innerBoxH / 2 - Math.round(fs * 0.08));
-      ctx.globalAlpha  = 1;
+      ctx.shadowBlur  = 0;
+      ctx.globalAlpha = 1;
     }
   });
 }
 
-/* ─── GET /gif ───────────────────────────────────────────────────────────── */
+/* ─── Routes ─────────────────────────────────────────────────────────────── */
 router.get("/gif", async (req, res) => {
   try {
     const p = parseParams(req.query);
@@ -289,16 +468,13 @@ router.get("/gif", async (req, res) => {
   }
 });
 
-/* ─── GET /preview ───────────────────────────────────────────────────────── */
 router.get("/preview", (req, res) => {
   try {
     const p      = parseParams(req.query);
     const canvas = createCanvas(p.width, p.height);
     const ctx    = canvas.getContext("2d");
     const time   = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
-
     drawFrame(ctx, p.width, p.height, time, p);
-
     res.setHeader("Content-Type",  "image/png");
     res.setHeader("Cache-Control", "no-cache");
     canvas.createPNGStream().pipe(res);
@@ -308,7 +484,6 @@ router.get("/preview", (req, res) => {
   }
 });
 
-/* ─── GET /embed ─────────────────────────────────────────────────────────── */
 router.get("/embed", (req, res) => {
   const p      = parseParams(req.query);
   const units  = [
@@ -327,15 +502,57 @@ router.get("/embed", (req, res) => {
   }
 
   const html = buildEmbedHtml(p, units, lblMap, resolvedTarget);
-
   res.setHeader("Content-Type", "text/html");
   res.setHeader("X-Frame-Options", "ALLOWALL");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.send(html);
 });
 
-/* ─── Shared embed HTML builder ─────────────────────────────────────────── */
+/* ─── Embed HTML builder ─────────────────────────────────────────────────── */
 function buildEmbedHtml(p, units, lblMap, resolvedTarget) {
+  // Map visualStyle → CSS overrides for the embed iframe
+  // Mirrors the frontend VISUAL_STYLES exactly
+  const embedStyleMap = {
+    default: {
+      wrap:  `border:2px solid ${p.accent}44; box-shadow:0 4px 20px ${p.accent}18;`,
+      box:   `border-radius:7px; border:1px solid ${p.accent}30; box-shadow:0 2px 8px rgba(0,0,0,.25);`,
+      sep:   `opacity:.65;`,
+      label: `opacity:.55;`,
+    },
+    neon: {
+      wrap:  `border:2px solid ${p.accent}; box-shadow:0 0 18px ${p.accent}99,0 0 36px ${p.accent}44,inset 0 0 12px ${p.accent}11;`,
+      box:   `border-radius:4px; border:2px solid ${p.accent}; box-shadow:0 0 10px ${p.accent}88,inset 0 0 8px ${p.accent}22; background:${p.accent}11; color:${p.accent};`,
+      sep:   `color:${p.accent}; text-shadow:0 0 8px ${p.accent}; opacity:1;`,
+      label: `color:${p.accent}; opacity:.85; text-shadow:0 0 6px ${p.accent}88; letter-spacing:.2em;`,
+    },
+    minimal: {
+      wrap:  `border:none; box-shadow:none; border-radius:0; border-bottom:2px solid ${p.accent}55;`,
+      box:   `background:transparent; border:none; box-shadow:none; border-radius:0; border-bottom:2px solid ${p.accent};`,
+      sep:   `opacity:.3; font-weight:300;`,
+      label: `opacity:.4; font-weight:400; letter-spacing:.22em;`,
+    },
+    glass: {
+      wrap:  `border:1px solid ${p.textColor}18; box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 ${p.textColor}22; background:${p.bg}cc;`,
+      box:   `border-radius:10px; border:1px solid ${p.textColor}22; box-shadow:inset 0 1px 0 ${p.textColor}15,0 4px 12px rgba(0,0,0,.2); background:${p.textColor}0d;`,
+      sep:   `opacity:.25; font-weight:300; color:${p.textColor};`,
+      label: `opacity:.45; font-weight:500;`,
+    },
+    retro: {
+      wrap:  `border:4px solid ${p.accent}; box-shadow:6px 6px 0 ${p.accent}; border-radius:0;`,
+      box:   `border-radius:0; border:3px solid ${p.accent}; box-shadow:3px 3px 0 ${p.accent}88; font-weight:900;`,
+      sep:   `opacity:1; font-weight:900;`,
+      label: `opacity:1; font-weight:700; letter-spacing:.12em; color:${p.accent};`,
+    },
+    soft: {
+      wrap:  `border:1px solid ${p.accent}33; box-shadow:0 2px 24px ${p.accent}22; border-radius:28px;`,
+      box:   `border-radius:999px; border:none; box-shadow:0 4px 16px ${p.accent}33; background:linear-gradient(135deg,${p.box},${p.accent}44); font-weight:800;`,
+      sep:   `opacity:.5; font-weight:300;`,
+      label: `opacity:.8; font-weight:600; letter-spacing:.15em; color:${p.accent};`,
+    },
+  };
+
+  const vs = embedStyleMap[p.visualStyle] || embedStyleMap.default;
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -358,6 +575,7 @@ function buildEmbedHtml(p, units, lblMap, resolvedTarget) {
     border:2px solid ${p.accent}44;
     box-shadow:0 4px 24px ${p.accent}22;
     width:100%;max-width:100%;
+    ${vs.wrap}
   }
   .title{
     color:${p.textColor};
@@ -379,16 +597,19 @@ function buildEmbedHtml(p, units, lblMap, resolvedTarget) {
     text-align:center;
     border:1px solid ${p.accent}33;
     box-shadow:0 2px 10px rgba(0,0,0,.3);
+    ${vs.box}
   }
   .lbl{
     color:${p.textColor};
     font-size:clamp(7px,1.2vw,10px);
     opacity:.55;margin-top:4px;letter-spacing:.14em;
+    ${vs.label}
   }
   .sep{
     color:${p.accent};
     font-size:clamp(16px,4vw,${Math.floor(p.fontSize * 0.8)}px);
     font-weight:700;padding-bottom:clamp(8px,2vw,14px);opacity:.65;align-self:center;
+    ${vs.sep}
   }
   .expired{color:${p.accent};font-size:clamp(16px,4vw,24px);font-weight:700;letter-spacing:.1em;}
 </style>
@@ -429,16 +650,7 @@ function buildEmbedHtml(p, units, lblMap, resolvedTarget) {
 </html>`;
 }
 
-/* ─── Short URL routes  /t/:id/gif  and  /t/:id/embed ────────────────────
- *
- * Mount this router at BOTH /api/timer  AND  /t  in server.js:
- *
- *   const timerRouter = require("./routes/timer");
- *   app.use("/api/timer", timerRouter);
- *   app.use("/t",         timerRouter);   // ← add this line
- *
- * ─────────────────────────────────────────────────────────────────────── */
-
+/* ─── Short URL routes ───────────────────────────────────────────────────── */
 function buildParamsFromRow(row) {
   const cfg = (() => { try { return JSON.parse(row.cfg); } catch { return {}; } })();
   return parseParams({
@@ -458,6 +670,7 @@ function buildParamsFromRow(row) {
     hours:        cfg.showHours    === false ? "0" : "1",
     minutes:      cfg.showMinutes  === false ? "0" : "1",
     seconds:      cfg.showSeconds  === false ? "0" : "1",
+    visualStyle:  cfg.visualStyle  || "default",   // ← pass through
   });
 }
 

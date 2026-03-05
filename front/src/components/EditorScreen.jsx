@@ -5,6 +5,7 @@ import {
   buildParams,
   defaultTarget,
   LiveClock,
+  VISUAL_STYLES,
   Lbl, Field, Card, Chip, InfoBox, inputCls, CodeBox, UnsavedNudge,
   Header, NameModal,
 } from "./timerUtils";
@@ -361,7 +362,47 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
             {/* ── Design tab ── */}
             {tab === "design" && (
               <div>
-                <Lbl>Templates</Lbl>
+                {/* ── Visual Style picker ── */}
+                <Lbl>Style</Lbl>
+                <div className="grid grid-cols-3 gap-2 mb-[18px]">
+                  {Object.entries(VISUAL_STYLES).map(([key, vs]) => {
+                    const active = (cfg.visualStyle || "default") === key;
+                    return (
+                      <div key={key}
+                        onClick={() => sc("visualStyle", key)}
+                        className={`cursor-pointer rounded-[9px] p-2 border-[2px] transition-all duration-150 flex flex-col items-center gap-1.5
+                          ${active ? "border-[var(--color-accent)] bg-[var(--color-accentBg)]" : "border-[var(--color-border)] bg-[var(--color-card)]"}`}>
+                        <div style={{
+                          width: "100%", height: 38, borderRadius: 6,
+                          background: cfg.bg, display: "flex", alignItems: "center",
+                          justifyContent: "center", gap: 3, overflow: "hidden",
+                          ...vs.wrapper(0.45, cfg),
+                          padding: "4px 6px",
+                        }}>
+                          {["00","00"].map((v, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                              <div style={{
+                                fontSize: 11, fontWeight: 700,
+                                padding: "2px 5px", minWidth: 20, textAlign: "center",
+                                lineHeight: 1,
+                                ...vs.box(0.45, cfg),
+                              }}>{v}</div>
+                              {i === 0 && (
+                                <div style={{ fontSize: 10, marginBottom: 2, ...vs.sep(0.45, cfg) }}>:</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className={`text-[10px] font-semibold ${active ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
+                          {vs.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Color Theme picker ── */}
+                <Lbl>Color Theme</Lbl>
                 <div className="grid grid-cols-3 gap-2 mb-[18px]">
                   {TIMER_TEMPLATES.map((t) => (
                     <div key={t.name}

@@ -33,6 +33,7 @@ export function calcTime(target, mode, countUp, egHours) {
 export function buildParams(cfg, target, mode, egHours, timezone) {
   return new URLSearchParams({
     target, mode, egHours, timezone,
+    countUp: mode === "countup" ? "1" : "0",
     bg:           cfg.bg.replace("#", ""),
     box:          cfg.box.replace("#", ""),
     text:         cfg.text.replace("#", ""),
@@ -54,7 +55,222 @@ export function defaultTarget() {
   return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+// ─── Visual Style Presets ─────────────────────────────────────────────────────
+// Each preset overrides only the CSS properties it cares about.
+// TimerFace merges these on top of the base styles — no HTML changes needed.
+//
+// Surfaces you can override per-element:
+//   wrapper  → the outer container div
+//   box      → each number box
+//   label    → DAYS / HRS / MIN / SEC text
+//   sep      → the ":" separator
+//   title    → the title row above numbers
+//
+export const VISUAL_STYLES = {
+
+  // 1. Default — flat dark boxes, subtle glow border (the existing look)
+  default: {
+    label: "Default",
+    wrapper: (s, cfg) => ({
+      border: `${2*s}px solid ${cfg.accent}44`,
+      boxShadow: `0 ${4*s}px ${20*s}px ${cfg.accent}18`,
+      borderRadius: `${(cfg.borderRadius||12)*s}px`,
+    }),
+    box: (s, cfg) => ({
+      borderRadius: `${7*s}px`,
+      border: `1px solid ${cfg.accent}30`,
+      boxShadow: `0 ${2*s}px ${8*s}px rgba(0,0,0,.25)`,
+      background: cfg.box,
+    }),
+    sep: () => ({}),
+    label: () => ({}),
+    title: () => ({}),
+  },
+
+  // 2. Neon — bright glowing outlines, no fill on boxes, electric vibe
+  neon: {
+    label: "Neon",
+    wrapper: (s, cfg) => ({
+      border: `${2*s}px solid ${cfg.accent}`,
+      boxShadow: `0 0 ${18*s}px ${cfg.accent}99, 0 0 ${36*s}px ${cfg.accent}44, inset 0 0 ${12*s}px ${cfg.accent}11`,
+      borderRadius: `${(cfg.borderRadius||12)*s}px`,
+    }),
+    box: (s, cfg) => ({
+      borderRadius: `${4*s}px`,
+      border: `${2*s}px solid ${cfg.accent}`,
+      boxShadow: `0 0 ${10*s}px ${cfg.accent}88, inset 0 0 ${8*s}px ${cfg.accent}22`,
+      background: `${cfg.accent}11`,
+      color: cfg.accent,
+    }),
+    sep: (s, cfg) => ({
+      color: cfg.accent,
+      textShadow: `0 0 ${8*s}px ${cfg.accent}`,
+      opacity: 1,
+    }),
+    label: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 0.85,
+      textShadow: `0 0 ${6*s}px ${cfg.accent}88`,
+      letterSpacing: "0.2em",
+    }),
+    title: (s, cfg) => ({
+      color: cfg.accent,
+      textShadow: `0 0 ${10*s}px ${cfg.accent}`,
+      letterSpacing: "0.25em",
+    }),
+  },
+
+  // 3. Minimal — no box background, just a bottom border underline, clean whitespace
+  minimal: {
+    label: "Minimal",
+    wrapper: (s, cfg) => ({
+      border: "none",
+      boxShadow: "none",
+      borderRadius: 0,
+      borderBottom: `${2*s}px solid ${cfg.accent}55`,
+      paddingBottom: `${14*s}px`,
+    }),
+    box: (s, cfg) => ({
+      background: "transparent",
+      border: "none",
+      boxShadow: "none",
+      borderRadius: 0,
+      borderBottom: `${2*s}px solid ${cfg.accent}`,
+      color: cfg.text,
+      paddingLeft: `${8*s}px`,
+      paddingRight: `${8*s}px`,
+    }),
+    sep: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 0.35,
+      fontWeight: 300,
+    }),
+    label: (s, cfg) => ({
+      color: cfg.text,
+      opacity: 0.4,
+      letterSpacing: "0.22em",
+      fontWeight: 400,
+      textTransform: "uppercase",
+    }),
+    title: (s, cfg) => ({
+      letterSpacing: "0.3em",
+      fontWeight: 400,
+      opacity: 0.65,
+    }),
+  },
+
+  // 4. Glass — frosted translucent boxes with backdrop blur vibe, soft borders
+  glass: {
+    label: "Glass",
+    wrapper: (s, cfg) => ({
+      border: `${1*s}px solid ${cfg.text}18`,
+      boxShadow: `0 ${8*s}px ${32*s}px rgba(0,0,0,.35), inset 0 ${1*s}px 0 ${cfg.text}22`,
+      borderRadius: `${(cfg.borderRadius||12)*s}px`,
+      background: `${cfg.bg}cc`,
+    }),
+    box: (s, cfg) => ({
+      borderRadius: `${10*s}px`,
+      border: `${1*s}px solid ${cfg.text}22`,
+      boxShadow: `inset 0 ${1*s}px 0 ${cfg.text}15, 0 ${4*s}px ${12*s}px rgba(0,0,0,.2)`,
+      background: `${cfg.text}0d`,
+      color: cfg.text,
+    }),
+    sep: (s, cfg) => ({
+      color: cfg.text,
+      opacity: 0.25,
+      fontWeight: 300,
+    }),
+    label: (s, cfg) => ({
+      color: cfg.text,
+      opacity: 0.45,
+      letterSpacing: "0.18em",
+      fontWeight: 500,
+    }),
+    title: (s, cfg) => ({
+      opacity: 0.75,
+      letterSpacing: "0.22em",
+      fontWeight: 600,
+    }),
+  },
+
+  // 5. Retro — thick solid borders, flat color, no shadows, chunky 8-bit feel
+  retro: {
+    label: "Retro",
+    wrapper: (s, cfg) => ({
+      border: `${4*s}px solid ${cfg.accent}`,
+      boxShadow: `${6*s}px ${6*s}px 0 ${cfg.accent}`,
+      borderRadius: 0,
+    }),
+    box: (s, cfg) => ({
+      borderRadius: 0,
+      border: `${3*s}px solid ${cfg.accent}`,
+      boxShadow: `${3*s}px ${3*s}px 0 ${cfg.accent}88`,
+      background: cfg.box,
+      color: cfg.text,
+      fontWeight: 900,
+      letterSpacing: "0.05em",
+    }),
+    sep: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 1,
+      fontWeight: 900,
+      fontSize: "inherit",
+    }),
+    label: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 1,
+      fontWeight: 700,
+      letterSpacing: "0.12em",
+    }),
+    title: (s, cfg) => ({
+      color: cfg.accent,
+      letterSpacing: "0.15em",
+      fontWeight: 900,
+    }),
+  },
+
+  // 6. Soft — rounded pill boxes, pastel glow, friendly & modern
+  soft: {
+    label: "Soft",
+    wrapper: (s, cfg) => ({
+      border: `${1*s}px solid ${cfg.accent}33`,
+      boxShadow: `0 ${2*s}px ${24*s}px ${cfg.accent}22`,
+      borderRadius: `${28*s}px`,
+      padding: `${22*s}px ${28*s}px`,
+    }),
+    box: (s, cfg) => ({
+      borderRadius: `${999*s}px`,
+      border: "none",
+      boxShadow: `0 ${4*s}px ${16*s}px ${cfg.accent}33`,
+      background: `linear-gradient(135deg, ${cfg.box}, ${cfg.accent}44)`,
+      color: cfg.text,
+      fontWeight: 800,
+      paddingLeft: `${20*s}px`,
+      paddingRight: `${20*s}px`,
+    }),
+    sep: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 0.5,
+      fontWeight: 300,
+    }),
+    label: (s, cfg) => ({
+      color: cfg.accent,
+      opacity: 0.8,
+      fontWeight: 600,
+      letterSpacing: "0.15em",
+    }),
+    title: (s, cfg) => ({
+      color: cfg.text,
+      opacity: 0.8,
+      letterSpacing: "0.2em",
+      fontWeight: 700,
+    }),
+  },
+};
+
 // ─── TimerFace ────────────────────────────────────────────────────────────────
+// Reads cfg.visualStyle (string key into VISUAL_STYLES) and merges the preset
+// styles on top of the base styles. All HTML structure stays identical.
 export const TimerFace = memo(function ({ time, cfg, scale = 1 }) {
   const units = [
     cfg.showDays    && { lbl: "DAYS", val: pad(time.days) },
@@ -63,44 +279,90 @@ export const TimerFace = memo(function ({ time, cfg, scale = 1 }) {
     cfg.showSeconds && { lbl: "SEC",  val: pad(time.seconds) },
   ].filter(Boolean);
   const fs = (cfg.fontSize || 36) * scale;
+  const s  = scale;
+
+  // Resolve the visual style preset (fall back to default)
+  const vs = VISUAL_STYLES[cfg.visualStyle] || VISUAL_STYLES.default;
+
+  // Base styles for each surface
+  const wrapperBase = {
+    background:    cfg.transparent ? "transparent" : cfg.bg,
+    padding:       `${20*s}px ${24*s}px`,
+    borderRadius:  `${(cfg.borderRadius||12)*s}px`,
+    fontFamily:    `'${cfg.font || "Orbitron"}', monospace`,
+    border:        `${2*s}px solid ${cfg.accent}44`,
+    boxShadow:     `0 ${4*s}px ${20*s}px ${cfg.accent}18`,
+    display:       "inline-flex",
+    flexDirection: "column",
+    alignItems:    "center",
+    gap:           `${10*s}px`,
+  };
+
+  const boxBase = {
+    background:  cfg.box,
+    color:       cfg.text,
+    fontSize:    `${fs}px`,
+    fontWeight:  700,
+    padding:     `${10*s}px ${16*s}px`,
+    borderRadius:`${7*s}px`,
+    lineHeight:  1,
+    minWidth:    `${52*s}px`,
+    textAlign:   "center",
+    border:      `1px solid ${cfg.accent}30`,
+    boxShadow:   `0 ${2*s}px ${8*s}px rgba(0,0,0,.25)`,
+  };
+
+  const labelBase = {
+    color:         cfg.text,
+    fontSize:      `${9*s}px`,
+    opacity:       0.55,
+    marginTop:     `${4*s}px`,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+  };
+
+  const sepBase = {
+    color:        cfg.accent,
+    fontSize:     `${fs * 0.8}px`,
+    fontWeight:   700,
+    margin:       `0 ${3*s}px`,
+    paddingBottom:`${12*s}px`,
+    opacity:      0.65,
+  };
+
+  const titleBase = {
+    color:         cfg.text,
+    fontSize:      `${11*s}px`,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    fontWeight:    700,
+    opacity:       0.9,
+  };
+
+  // Merge: base ← preset override
+  const wrapperStyle = { ...wrapperBase, ...vs.wrapper(s, cfg) };
+  const boxStyle     = { ...boxBase,     ...vs.box(s, cfg)     };
+  const labelStyle   = { ...labelBase,   ...vs.label(s, cfg)   };
+  const sepStyle     = { ...sepBase,     ...vs.sep(s, cfg)      };
+  const titleStyle   = { ...titleBase,   ...vs.title(s, cfg)   };
 
   return (
-    <div style={{
-      background: cfg.transparent ? "transparent" : cfg.bg,
-      padding: `${20 * scale}px ${24 * scale}px`,
-      borderRadius: `${(cfg.borderRadius || 12) * scale}px`,
-      fontFamily: `'${cfg.font || "Orbitron"}', monospace`,
-      border: `${2 * scale}px solid ${cfg.accent}44`,
-      boxShadow: `0 ${4 * scale}px ${20 * scale}px ${cfg.accent}18`,
-      display: "inline-flex", flexDirection: "column", alignItems: "center",
-      gap: `${10 * scale}px`,
-    }}>
+    <div style={wrapperStyle}>
       {cfg.title && (
-        <div style={{ color: cfg.text, fontSize: `${11 * scale}px`, letterSpacing: "0.18em",
-          textTransform: "uppercase", fontWeight: 700, opacity: 0.9 }}>
-          {cfg.title}
-        </div>
+        <div style={titleStyle}>{cfg.title}</div>
       )}
       {time.done ? (
-        <div style={{ color: cfg.accent, fontSize: `${20 * scale}px`, fontWeight: 700 }}>EXPIRED</div>
+        <div style={{ color: cfg.accent, fontSize: `${20*s}px`, fontWeight: 700 }}>EXPIRED</div>
       ) : (
-        <div style={{ display: "flex", gap: `${10 * scale}px`, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: `${10*s}px`, alignItems: "flex-start" }}>
           {units.map(({ lbl, val }, i) => (
             <div key={lbl} style={{ display: "flex", alignItems: "center" }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{
-                  background: cfg.box, color: cfg.text, fontSize: `${fs}px`, fontWeight: 700,
-                  padding: `${10 * scale}px ${16 * scale}px`, borderRadius: `${7 * scale}px`,
-                  lineHeight: 1, minWidth: `${52 * scale}px`, textAlign: "center",
-                  border: `1px solid ${cfg.accent}30`,
-                  boxShadow: `0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.25)`,
-                }}>{val}</div>
-                <div style={{ color: cfg.text, fontSize: `${9 * scale}px`, opacity: 0.55,
-                  marginTop: `${4 * scale}px`, letterSpacing: "0.14em" }}>{lbl}</div>
+                <div style={boxStyle}>{val}</div>
+                <div style={labelStyle}>{lbl}</div>
               </div>
               {i < units.length - 1 && (
-                <div style={{ color: cfg.accent, fontSize: `${fs * 0.8}px`, fontWeight: 700,
-                  margin: `0 ${3 * scale}px`, paddingBottom: `${12 * scale}px`, opacity: 0.65 }}>:</div>
+                <div style={sepStyle}>:</div>
               )}
             </div>
           ))}

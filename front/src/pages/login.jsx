@@ -4,19 +4,29 @@ import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
 const API = import.meta.env.VITE_BACKEND_URL + "/api/auth";
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const passwordMinLength = 6;
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState("login"); // login | register | otp
-
   const [form, setForm] = useState({ email: "", password: "", otp: "" });
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
+  const validate = () => {
+    if (!emailRegex.test(form.email)) return "Invalid email address";
+    if ((mode === "register" || mode === "login") && form.password.length < passwordMinLength)
+      return `Password must be at least ${passwordMinLength} characters`;
+    if (mode === "otp" && form.otp.length !== 6) return "OTP must be 6 digits";
+    return null;
+  };
+
   const handleRegister = async () => {
+    const errMsg = validate(); if (errMsg) return setError(errMsg);
     try {
       setLoading(true); setError(""); setSuccess("");
       const res = await axios.post(`${API}/register`, { email: form.email, password: form.password });
@@ -29,17 +39,30 @@ export default function AuthPage() {
   };
 
   const handleLogin = async () => {
-    try {
-      setLoading(true); setError("");
-      const res = await axios.post(`${API}/login`, { email: form.email, password: form.password }, { withCredentials: true });
-      localStorage.setItem("accessToken", res.data.accessToken);
-      navigate("/dashboard");
-    } catch (err) {
-      setError(err.response?.data?.message || "Login failed");
-    } finally { setLoading(false); }
-  };
+  const errMsg = validate(); if (errMsg) return setError(errMsg);
+  try {
+    setLoading(true); setError(""); setSuccess("");
+    const res = await axios.post(`${API}/login`, { email: form.email, password: form.password }, { withCredentials: true });
+
+    // Login success
+    localStorage.setItem("accessToken", res.data.accessToken);
+    navigate("/dashboard");
+
+  } catch (err) {
+    const data = err.response?.data;
+    if (data?.otp && data?.email) {
+      // Account unverified, switch to OTP mode
+      setForm(f => ({ ...f, email: data.email, password: "" }));
+      setSuccess(`Account not verified. Your OTP is: ${data.otp}`);
+      setMode("otp");
+    } else {
+      setError(data?.message || "Login failed");
+    }
+  } finally { setLoading(false); }
+};
 
   const handleVerifyOtp = async () => {
+    const errMsg = validate(); if (errMsg) return setError(errMsg);
     try {
       setLoading(true); setError("");
       const res = await axios.post(`${API}/verify-otp`, { email: form.email, otp: form.otp }, { withCredentials: true });
@@ -56,17 +79,18 @@ export default function AuthPage() {
       const res = await axios.post(`${API}/google`, { credential: credentialResponse.credential }, { withCredentials: true });
       localStorage.setItem("accessToken", res.data.accessToken);
       navigate("/dashboard");
-    } catch { setError("Google login failed"); }
-    finally { setLoading(false); }
+    } catch {
+      setError("Google login failed");
+    } finally { setLoading(false); }
   };
 
   const inputCls = "w-full bg-white border border-[var(--color-borderDark)] rounded-[8px] px-[13px] py-[10px] text-[13px] text-[var(--color-text)] font-[inherit] box-border focus:outline-2 focus:outline-[var(--color-accent)] focus:outline-offset-1 transition-all placeholder:text-[var(--color-faint)]";
-  const btnCls   = "w-full py-[11px] rounded-[9px] border-none bg-[var(--color-accent)] text-white font-bold text-[13px] cursor-pointer font-[inherit] transition-opacity hover:opacity-90 disabled:opacity-50";
+  const btnCls = "w-full py-[11px] rounded-[9px] border-none bg-[var(--color-accent)] text-white font-bold text-[13px] cursor-pointer font-[inherit] transition-opacity hover:opacity-90 disabled:opacity-50";
 
   const modeConfig = {
-    login:    { title: "Welcome back",       sub: "Sign in to your account"           },
-    register: { title: "Create account",     sub: "Get started with CountTimer Pro"   },
-    otp:      { title: "Check your email",   sub: `We sent a 6-digit code to ${form.email}` },
+    login: { title: "Welcome back", sub: "Sign in to your account" },
+    register: { title: "Create account", sub: "Get started with CountTimer Pro" },
+    otp: { title: "Check your email", sub: `We sent a 6-digit code to ${form.email}` },
   };
 
   return (
@@ -79,7 +103,6 @@ export default function AuthPage() {
       `}</style>
 
       <div className="auth-card w-full max-w-[400px]">
-
         {/* Logo / Brand */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] flex items-center justify-center text-2xl mx-auto mb-3 shadow-[var(--shadow-xl)]">
@@ -94,48 +117,26 @@ export default function AuthPage() {
 
           {/* Header */}
           <div className="mb-5">
-            <div className="font-bold text-[18px] text-[var(--color-text)] mb-1">
-              {modeConfig[mode].title}
-            </div>
-            <div className="text-[12px] text-[var(--color-muted)] leading-[1.5]">
-              {modeConfig[mode].sub}
-            </div>
+            <div className="font-bold text-[18px] text-[var(--color-text)] mb-1">{modeConfig[mode].title}</div>
+            <div className="text-[12px] text-[var(--color-muted)] leading-[1.5]">{modeConfig[mode].sub}</div>
           </div>
 
           {/* Alerts */}
-          {error && (
-            <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-redBg)] border border-[var(--color-redBdr)] text-[var(--color-red)] text-[12px] font-medium">
-              ⚠ {error}
-            </div>
-          )}
-          {success && (
-            <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-greenBg)] border border-[var(--color-greenBdr)] text-[var(--color-green)] text-[12px] font-medium">
-              ✓ {success}
-            </div>
-          )}
+          {error && <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-redBg)] border border-[var(--color-redBdr)] text-[var(--color-red)] text-[12px] font-medium">⚠ {error}</div>}
+          {success && <div className="mb-4 px-3 py-2.5 rounded-[8px] bg-[var(--color-greenBg)] border border-[var(--color-greenBdr)] text-[var(--color-green)] text-[12px] font-medium">✓ {success}</div>}
 
           {/* Fields */}
           <div className="flex flex-col gap-3">
-
-            {/* Email — always shown */}
+            {/* Email */}
             <div>
-              <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
-                Email
-              </label>
-              <input
-                name="email" type="email" placeholder="you@example.com"
-                value={form.email} onChange={handleChange}
-                className={inputCls}
-                disabled={mode === "otp"}
-              />
+              <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">Email</label>
+              <input name="email" type="email" placeholder="you@example.com" value={form.email} onChange={handleChange} className={inputCls} disabled={mode === "otp"} />
             </div>
 
-            {/* Password — login & register only */}
+            {/* Password */}
             {(mode === "login" || mode === "register") && (
               <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
-                  Password
-                </label>
+                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">Password</label>
                 <input
                   name="password" type="password" placeholder="••••••••"
                   value={form.password} onChange={handleChange}
@@ -145,12 +146,10 @@ export default function AuthPage() {
               </div>
             )}
 
-            {/* OTP field */}
+            {/* OTP */}
             {mode === "otp" && (
               <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">
-                  One-time code
-                </label>
+                <label className="block text-[11px] font-semibold text-[var(--color-muted)] uppercase tracking-[0.05em] mb-1.5">One-time code</label>
                 <input
                   name="otp" type="text" placeholder="123456" maxLength={6}
                   value={form.otp} onChange={handleChange}
@@ -158,83 +157,40 @@ export default function AuthPage() {
                   onKeyDown={(e) => e.key === "Enter" && handleVerifyOtp()}
                   autoFocus
                 />
-                <div className="text-[11px] text-[var(--color-faint)] mt-1.5 text-center">
-                  Code expires in 5 minutes
-                </div>
+                <div className="text-[11px] text-[var(--color-faint)] mt-1.5 text-center">Code expires in 5 minutes</div>
               </div>
             )}
 
-            {/* CTA Button */}
-            {mode === "login" && (
-              <button onClick={handleLogin} disabled={loading} className={btnCls}>
-                {loading ? "Signing in…" : "Sign In"}
-              </button>
-            )}
-            {mode === "register" && (
-              <button onClick={handleRegister} disabled={loading} className={btnCls}>
-                {loading ? "Creating account…" : "Create Account"}
-              </button>
-            )}
+            {/* CTA Buttons */}
+            {mode === "login" && <button onClick={handleLogin} disabled={loading} className={btnCls}>{loading ? "Signing in…" : "Sign In"}</button>}
+            {mode === "register" && <button onClick={handleRegister} disabled={loading} className={btnCls}>{loading ? "Creating account…" : "Create Account"}</button>}
             {mode === "otp" && (
               <>
-                <button onClick={handleVerifyOtp} disabled={loading} className={btnCls}>
-                  {loading ? "Verifying…" : "Verify Code →"}
-                </button>
-                <button
-                  onClick={() => { setMode("register"); setForm(f => ({ ...f, otp: "" })); setError(""); setSuccess(""); }}
-                  className="w-full py-2 text-[12px] text-[var(--color-muted)] cursor-pointer bg-transparent border-none font-[inherit] hover:text-[var(--color-accent)] transition-colors">
-                  ← Back to register
-                </button>
+                <button onClick={handleVerifyOtp} disabled={loading} className={btnCls}>{loading ? "Verifying…" : "Verify OTP"}</button>
+                <div className="text-[11px] mt-2 text-center">
+                  Didn't receive code? <span className="text-[var(--color-accent)] cursor-pointer" onClick={handleRegister}>Resend</span>
+                </div>
               </>
             )}
+
+            {/* Switch Mode */}
+            {mode !== "otp" && (
+              <div className="text-[11px] text-center mt-2 text-[var(--color-faint)]">
+                {mode === "login" ? "No account yet?" : "Already have an account?"}
+                <span className="text-[var(--color-accent)] cursor-pointer ml-1" onClick={() => setMode(mode === "login" ? "register" : "login")}>
+                  {mode === "login" ? "Sign up" : "Sign in"}
+                </span>
+              </div>
+            )}
+
+            {/* Google Login */}
+            {mode !== "otp" && (
+              <div className="mt-4">
+                <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => setError("Google login failed")} />
+              </div>
+            )}
+
           </div>
-
-          {/* Divider + Google — not shown on OTP screen */}
-          {mode !== "otp" && (
-            <>
-              <div className="flex items-center gap-3 my-5">
-                <div className="flex-1 h-px bg-[var(--color-border)]" />
-                <span className="text-[11px] text-[var(--color-faint)] font-medium">or</span>
-                <div className="flex-1 h-px bg-[var(--color-border)]" />
-              </div>
-
-              <div className="flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => setError("Google Login Failed")}
-                  theme="outline"
-                  size="large"
-                  width="340"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Mode switcher */}
-          {mode !== "otp" && (
-            <div className="text-center mt-5 text-[12px] text-[var(--color-muted)]">
-              {mode === "login" ? (
-                <>Don't have an account?{" "}
-                  <span onClick={() => { setMode("register"); setError(""); setSuccess(""); }}
-                    className="text-[var(--color-accent)] font-semibold cursor-pointer hover:underline">
-                    Register
-                  </span>
-                </>
-              ) : (
-                <>Already have an account?{" "}
-                  <span onClick={() => { setMode("login"); setError(""); setSuccess(""); }}
-                    className="text-[var(--color-accent)] font-semibold cursor-pointer hover:underline">
-                    Sign in
-                  </span>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-5 text-[11px] text-[var(--color-faint)]">
-          © {new Date().getFullYear()} CountTimer Pro · All rights reserved
         </div>
       </div>
     </div>

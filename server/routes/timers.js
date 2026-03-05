@@ -57,6 +57,7 @@ function normaliseTarget(raw) {
  */
 function normaliseCfg(raw) {
   const defaults = {
+    visualStyle:  "default",
     bg:           "#0f0f1a",
     box:          "#1e1b4b",
     text:         "#e0e7ff",

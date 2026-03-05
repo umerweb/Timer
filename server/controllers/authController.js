@@ -9,36 +9,36 @@ require("dotenv").config();
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Generate JWT
-const generateAccessToken = (user) => {
-  return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: "15m" }
-  );
-};
+const generateAccessToken = (user) =>
+  jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
-const generateRefreshToken = (user) => {
-  return jwt.sign(
-    { id: user.id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
-  );
-};
+const generateRefreshToken = (user) =>
+  jwt.sign({ id: user.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-// REGISTER
+// ---------------------- REGISTER ----------------------
 exports.register = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ message: "Email and password required" });
 
-    const hashed = await bcrypt.hash(password, 10);
+    const [existingUsers] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
+    if (existingUsers.length) {
+      const [userProvider] = await pool.query(
+        "SELECT provider FROM user_providers WHERE user_id = ?",
+        [existingUsers[0].id]
+      );
+      if (userProvider.length && userProvider[0].provider !== "local") {
+        return res.status(400).json({ message: "This email is registered via Google. Use Google login." });
+      }
+      return res.status(400).json({ message: "Email already exists" });
+    }
 
+    const hashed = await bcrypt.hash(password, 10);
     const [result] = await pool.query(
       "INSERT INTO users (email, password) VALUES (?, ?)",
       [email, hashed]
     );
-
     const userId = result.insertId;
 
     await pool.query(
@@ -47,7 +47,7 @@ exports.register = async (req, res) => {
     );
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 5 * 60000);
+    const expires = new Date(Date.now() + 5 * 60 * 1000);
 
     await pool.query(
       "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
@@ -56,44 +56,32 @@ exports.register = async (req, res) => {
 
     try {
       // await sendOtpEmail(email, otp, "email_verify");
-      // Send OTP back to frontend (for demo/testing)
       return res.json({ message: "User registered. Verify OTP.", otp, userId });
     } catch (e) {
       console.error("Failed to send OTP email:", e);
-      // Still send response even if email fails
       return res.json({ message: "User registered. Verify OTP. OTP email failed", otp, userId });
     }
-
   } catch (err) {
-    if (err.code === "ER_DUP_ENTRY") {
-      return res.status(400).json({ message: "Email already exists" });
-    }
     console.error(err);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
-// VERIFY OTP
+// ---------------------- VERIFY OTP ----------------------
 exports.verifyOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const [users] = await pool.query(
-      "SELECT * FROM users WHERE email = ?",
-      [email]
-    );
+    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
     if (!users.length) return res.status(404).json({ message: "User not found" });
 
     const user = users[0];
-
     const [otpRows] = await pool.query(
-      "SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND is_used = FALSE",
+      "SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND is_used = FALSE AND expires_at > NOW()",
       [user.id, otp]
     );
-    if (!otpRows.length) return res.status(400).json({ message: "Invalid OTP" });
+    if (!otpRows.length) return res.status(400).json({ message: "Invalid or expired OTP" });
 
-    await pool.query("UPDATE users SET is_email_verified = TRUE WHERE id = ?", [
-      user.id,
-    ]);
+    await pool.query("UPDATE users SET is_email_verified = TRUE WHERE id = ?", [user.id]);
     await pool.query("UPDATE otps SET is_used = TRUE WHERE id = ?", [otpRows[0].id]);
 
     const accessToken = generateAccessToken(user);
@@ -117,21 +105,46 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-// LOGIN
+// ---------------------- LOGIN ----------------------
+// ---------------------- LOGIN ----------------------
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [
-      email,
-    ]);
+    if (!email || !password) return res.status(400).json({ message: "Email and password required" });
 
-    if (!users.length)
-      return res.status(400).json({ message: "Invalid credentials" });
+    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
+    if (!users.length) return res.status(400).json({ message: "Account does not exist" });
 
     const user = users[0];
+
+    const [providers] = await pool.query("SELECT provider FROM user_providers WHERE user_id = ?", [user.id]);
+    if (providers.length && providers[0].provider !== "local") {
+      return res.status(400).json({ message: "This account is registered via Google. Use Google login." });
+    }
+
+    // If account not verified, generate new OTP
+    if (!user.is_email_verified) {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date(Date.now() + 5 * 60 * 1000);
+
+      await pool.query(
+        "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
+        [user.id, "email_verify", otp, expires]
+      );
+
+      // Optionally send email
+      // await sendOtpEmail(user.email, otp, "email_verify");
+
+      return res.status(400).json({
+        message: "Account not verified. OTP sent.",
+        otp,
+        email: user.email,
+      });
+    }
+
+    // Check password
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(400).json({ message: "Invalid credentials" });
+    if (!match) return res.status(400).json({ message: "Incorrect password" });
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -154,7 +167,7 @@ exports.login = async (req, res) => {
   }
 };
 
-// GOOGLE LOGIN
+// ---------------------- GOOGLE LOGIN ----------------------
 exports.googleLogin = async (req, res) => {
   try {
     const { credential } = req.body;
@@ -169,10 +182,7 @@ exports.googleLogin = async (req, res) => {
     let user;
 
     if (!users.length) {
-      const [result] = await pool.query(
-        "INSERT INTO users (email, is_email_verified) VALUES (?, TRUE)",
-        [email]
-      );
+      const [result] = await pool.query("INSERT INTO users (email, is_email_verified) VALUES (?, TRUE)", [email]);
       user = { id: result.insertId, role: "user" };
       await pool.query(
         "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, ?, ?)",
@@ -199,20 +209,18 @@ exports.googleLogin = async (req, res) => {
     res.json({ accessToken });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Google login failed" });
   }
 };
 
-// REFRESH
+// ---------------------- REFRESH TOKEN ----------------------
 exports.refreshToken = async (req, res) => {
   try {
     const token = req.cookies.refreshToken;
     if (!token) return res.sendStatus(401);
 
     const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    const [users] = await pool.query("SELECT * FROM users WHERE id = ?", [
-      decoded.id,
-    ]);
+    const [users] = await pool.query("SELECT * FROM users WHERE id = ?", [decoded.id]);
     if (!users.length) return res.sendStatus(403);
 
     const accessToken = generateAccessToken(users[0]);
@@ -223,7 +231,7 @@ exports.refreshToken = async (req, res) => {
   }
 };
 
-// LOGOUT
+// ---------------------- LOGOUT ----------------------
 exports.logout = async (req, res) => {
   try {
     const token = req.cookies.refreshToken;
