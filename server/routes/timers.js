@@ -1,6 +1,6 @@
 /**
  * routes/timers.js
- * 
+ *
  * Mounted at /api/timers in server.js
  * All routes require a valid JWT (Bearer token)
  *
@@ -11,34 +11,82 @@
  * DELETE /api/timers/:id    → delete a timer
  */
 
-const express = require("express");
-const router  = express.Router();
-const db      = require("../db");          
-const auth    = require("../middleware/auth");
+const express        = require("express");
+const router         = express.Router();
+const db             = require("../db");
+const auth           = require("../middleware/auth");
+const { gifCache }   = require("./timer");
 
 // All timer routes are protected
 router.use(auth);
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
-// Safely parse cfg JSON — returns {} on failure
 function parseCfg(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
   try { return JSON.parse(raw); } catch { return {}; }
 }
 
+/**
+ * Normalise the target value coming out of MySQL.
+ *
+ * MySQL DATETIME columns come back as JS Date objects or ISO strings like
+ * "2026-03-20T18:00:00.000Z". The React datetime-local input requires the
+ * format "YYYY-MM-DDTHH:mm" (exactly 16 chars, no seconds, no timezone).
+ *
+ * If we return the raw MySQL value the input silently becomes uncontrolled,
+ * the user's edited value is ignored, and the PUT sends the original date —
+ * making it look like changes aren't saving.
+ */
+function normaliseTarget(raw) {
+  if (!raw) return null;
+  // Already a plain datetime-local string — return as-is
+  if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
+  // Convert Date object or any ISO string → "YYYY-MM-DDTHH:mm"
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw; // unparseable — pass through unchanged
+  // Use local parts so the displayed time matches what was originally entered
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Merge stored cfg with safe defaults so every field is always present.
+ * This prevents undefined values causing React controlled/uncontrolled
+ * input warnings and silent data loss on save.
+ */
+function normaliseCfg(raw) {
+  const defaults = {
+    bg:           "#0f0f1a",
+    box:          "#1e1b4b",
+    text:         "#e0e7ff",
+    accent:       "#818cf8",
+    title:        "",
+    font:         "Orbitron",
+    fontSize:     36,
+    borderRadius: 12,
+    transparent:  false,
+    showDays:     true,
+    showHours:    true,
+    showMinutes:  true,
+    showSeconds:  true,
+  };
+  const parsed = parseCfg(raw);
+  return { ...defaults, ...parsed };
+}
+
 function formatTimer(row) {
   return {
-    id:         row.id,
-    name:       row.name,
-    target:     row.target,
-    mode:       row.mode,
-    egHours:    row.eg_hours,
-    timezone:   row.timezone,
-    language:   row.language,
-    cfg:        parseCfg(row.cfg),
-    createdAt:  row.created_at,
-    updatedAt:  row.updated_at,
+    id:        row.id,
+    name:      row.name,
+    target:    normaliseTarget(row.target),   // ← always "YYYY-MM-DDTHH:mm"
+    mode:      row.mode     || "countdown",
+    egHours:   row.eg_hours || 48,
+    timezone:  row.timezone || "UTC",
+    language:  row.language || "English",
+    cfg:       normaliseCfg(row.cfg),         // ← always has every field
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -85,10 +133,10 @@ router.post("/", async (req, res) => {
         req.user.id,
         name.trim(),
         target,
-        mode      || "countdown",
-        egHours   || 48,
-        timezone  || "UTC",
-        language  || "English",
+        mode     || "countdown",
+        egHours  || 48,
+        timezone || "UTC",
+        language || "English",
         JSON.stringify(cfg || {}),
       ]
     );
@@ -131,6 +179,9 @@ router.put("/:id", async (req, res) => {
       ]
     );
 
+    // Bust GIF cache so next request re-renders with new config
+    gifCache.delete(String(req.params.id));
+
     const [rows] = await db.query(`SELECT * FROM timers WHERE id = ?`, [req.params.id]);
     res.json(formatTimer(rows[0]));
   } catch (err) {
@@ -148,16 +199,19 @@ router.delete("/:id", async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ message: "Timer not found" });
 
-    await db.query(`DELETE FROM timers WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id]);
+    await db.query(
+      `DELETE FROM timers WHERE id = ? AND user_id = ?`,
+      [req.params.id, req.user.id]
+    );
+
+    // Bust GIF cache so deleted timer doesn't keep serving
+    gifCache.delete(String(req.params.id));
+
     res.json({ message: "Timer deleted" });
   } catch (err) {
     console.error("DELETE /timers/:id:", err);
     res.status(500).json({ message: "Failed to delete timer" });
   }
 });
-
-
-
-
 
 module.exports = router;
