@@ -461,7 +461,7 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
   const [savedId,    setSavedId]    = useState(initialTimer?.id ?? null);
   const [saveStatus, setSaveStatus] = useState("");
   const [saveModal,  setSaveModal]  = useState(false);
-  const [pendingTab, setPendingTab] = useState(null); // tab to jump to after save
+  const [pendingTab, setPendingTab] = useState(null);
   const [copied,     setCopied]     = useState("");
 
   const sc      = useCallback((k, v) => setCfg((c) => ({ ...c, [k]: v })), []);
@@ -479,14 +479,31 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
     ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=${COLORS.accent.replace("#", "")}&qzone=2`
     : null;
 
+  // ── Email / embed code snippets ──────────────────────────────────────────
+  // GIF rendered at 600px — the standard email column width.
+  // height:auto lets the image scale proportionally on any screen.
+  // width="600" as an HTML attribute is respected by Outlook (ignores CSS).
   const imgTag = shortGifUrl
-    ? `<img src="${shortGifUrl}"\n  style="display:inline-block;line-height:0;width:100%;max-width:380px"\n  alt="${cfg.title || "Countdown Timer"}">`
+    ? `<img src="${shortGifUrl}"\n  width="600"\n  style="display:block;width:100%;max-width:600px;height:auto;border:0;"\n  alt="${cfg.title || "Countdown Timer"}">`
     : "";
-  const iframeTag = shortEmbedUrl
-    ? `<iframe src="${shortEmbedUrl}"\n  width="420" height="130"\n  frameborder="0" scrolling="no"\n  style="border:none;overflow:hidden;display:block">\n</iframe>`
-    : "";
+
   const emailBlock = shortGifUrl
-    ? `<!-- ${cfg.title || "Countdown Timer"} -->\n<table cellpadding="0" cellspacing="0" border="0" align="center" width="100%">\n  <tr><td align="center" bgcolor="${cfg.bg}" style="padding:24px;border-radius:${cfg.borderRadius}px;">\n      <img src="${shortGifUrl}" style="display:inline-block;line-height:0;width:100%;max-width:380px" alt="${cfg.title || "Countdown Timer"}">\n  </td></tr>\n</table>`
+    ? `<!-- ${cfg.title || "Countdown Timer"} -->
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;">
+  <tr>
+    <td align="center" bgcolor="${cfg.bg}" style="padding:32px 24px;border-radius:${cfg.borderRadius}px;">
+      <img src="${shortGifUrl}"
+        width="600"
+        style="display:block;width:100%;max-width:600px;height:auto;border:0;"
+        alt="${cfg.title || "Countdown Timer"}">
+    </td>
+  </tr>
+</table>`
+    : "";
+
+  // Responsive iframe wrapper using the padding-bottom aspect-ratio trick
+  const iframeTag = shortEmbedUrl
+    ? `<!-- Responsive countdown embed -->\n<div style="position:relative;width:100%;max-width:600px;padding-bottom:28%;height:0;overflow:hidden;">\n  <iframe src="${shortEmbedUrl}"\n    style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;overflow:hidden;"\n    scrolling="no" title="${cfg.title || "Countdown Timer"}">\n  </iframe>\n</div>`
     : "";
 
   const copy = useCallback((text, id) => {
@@ -665,7 +682,6 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                     : "bg-transparent text-[var(--color-muted)] font-medium border-transparent"
                   }`}>
                 {label}
-                {/* Lock badge on tabs that need a saved ID */}
                 {["email","embed","share"].includes(id) && !savedId && (
                   <span className="ml-0.5 opacity-40">🔒</span>
                 )}
@@ -781,20 +797,21 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                   ? <UnsavedNudge onSave={() => setSaveModal(true)} />
                   : <>
                     <InfoBox colorVar="accent" bgVar="accentBg" borderVar="accentBdr" title="📧 Email Countdown GIF">
-                      Paste the img tag into your email. A fresh animated GIF is generated on every open.
+                      Rendered at 600px — the standard email width. Scales perfectly on mobile with <code>width:100%</code>.
                     </InfoBox>
                     {serverOnline && (
                       <Card>
                         <Lbl>Live GIF Preview</Lbl>
                         <div className="bg-[#111] rounded-lg p-3 text-center mb-2">
-                          <img key={savedId} src={shortGifUrl} alt="Timer GIF" className="max-w-full rounded-[6px] block mx-auto" />
+                          <img key={savedId} src={shortGifUrl} alt="Timer GIF"
+                            style={{ display: "block", width: "100%", height: "auto", borderRadius: 6 }} />
                         </div>
                       </Card>
                     )}
-                    <CodeBox code={imgTag}     cid="img"   copied={copied} copy={copy} label="📋 Paste into Email" />
+                    <CodeBox code={imgTag}     cid="img"   copied={copied} copy={copy} label="📋 Quick img tag" />
                     <CodeBox code={emailBlock} cid="email" copied={copied} copy={copy} label="Full HTML Email Block" />
                     <InfoBox colorVar="amber" bgVar="amberBg" borderVar="amberBdr" title="🍎 Apple Mail / MPP Note">
-                      Apple Mail pre-fetches images which can freeze the GIF. The block above includes an MSO fallback.
+                      Apple Mail pre-fetches images which can freeze the GIF at frame 1. Use Litmus or Email on Acid to test.
                     </InfoBox>
                   </>
                 }
@@ -808,7 +825,7 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                   ? <UnsavedNudge onSave={() => setSaveModal(true)} />
                   : <>
                     <InfoBox colorVar="blue" bgVar="blueBg" borderVar="blueBdr" title="🌐 Website iFrame Embed">
-                      Drop the iframe anywhere on your site for a live JS countdown.
+                      Fully responsive — the wrapper div scales the iframe to any screen width automatically.
                     </InfoBox>
                     {serverOnline && (
                       <Card>
@@ -818,7 +835,7 @@ function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLog
                         </div>
                       </Card>
                     )}
-                    <CodeBox code={iframeTag} cid="iframe" copied={copied} copy={copy} label="📋 Paste into Website" />
+                    <CodeBox code={iframeTag} cid="iframe" copied={copied} copy={copy} label="📋 Responsive iframe (paste into website)" />
                     <Card>
                       <Lbl>Direct embed URL</Lbl>
                       <div className="flex gap-2 items-center">
