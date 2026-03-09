@@ -8,6 +8,14 @@ require("dotenv").config();
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+// Helper: format JS date to MySQL datetime string
+//const toMySQLDate = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+// ✅ New — uses local time, matches MySQL NOW()
+const toMySQLDate = (ms) => {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
 // Generate JWT
 const generateAccessToken = (user) =>
   jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: "15m" });
@@ -47,19 +55,19 @@ exports.register = async (req, res) => {
     );
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 5 * 60 * 1000);
+    const expires = toMySQLDate(Date.now() + 5 * 60 * 1000);
 
     await pool.query(
       "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
-      [userId, "email_verify", expires]
+      [userId, "email_verify", otp, expires]
     );
 
     try {
       await sendOtpEmail(email, otp, "email_verify");
-      return res.json({ message: "User registered. Verify OTP.", otp, userId });
+      return res.json({ message: "User registered. Verify OTP.", userId });
     } catch (e) {
       console.error("Failed to send OTP email:", e);
-      return res.json({ message: "User registered. Verify OTP. OTP email failed", otp, userId });
+      return res.json({ message: "User registered. Verify OTP. OTP email failed", userId });
     }
   } catch (err) {
     console.error(err);
@@ -89,7 +97,7 @@ exports.verifyOtp = async (req, res) => {
 
     await pool.query(
       "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-      [user.id, refreshToken, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)]
+      [user.id, refreshToken, toMySQLDate(Date.now() + 7 * 24 * 60 * 60 * 1000)]
     );
 
     res.cookie("refreshToken", refreshToken, {
@@ -97,7 +105,7 @@ exports.verifyOtp = async (req, res) => {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
     });
-    sendOtpEmail()
+
     res.json({ accessToken });
   } catch (err) {
     console.error(err);
@@ -118,7 +126,7 @@ exports.resendOtp = async (req, res) => {
     if (user.is_email_verified) return res.status(400).json({ message: "Account already verified" });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 5 * 60 * 1000);
+    const expires = toMySQLDate(Date.now() + 5 * 60 * 1000);
 
     await pool.query(
       "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
@@ -127,13 +135,13 @@ exports.resendOtp = async (req, res) => {
 
     await sendOtpEmail(user.email, otp, "email_verify");
 
-    res.json({ message: "OTP resent", otp }); // optional: send otp for dev
+    res.json({ message: "OTP resent" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 };
-// ---------------------- LOGIN ----------------------
+
 // ---------------------- LOGIN ----------------------
 exports.login = async (req, res) => {
   try {
@@ -153,14 +161,13 @@ exports.login = async (req, res) => {
     // If account not verified, generate new OTP
     if (!user.is_email_verified) {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = new Date(Date.now() + 5 * 60 * 1000);
+      const expires = toMySQLDate(Date.now() + 5 * 60 * 1000);
 
       await pool.query(
         "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
         [user.id, "email_verify", otp, expires]
       );
 
-      // Optionally send email
       await sendOtpEmail(user.email, otp, "email_verify");
 
       return res.status(400).json({
@@ -178,7 +185,7 @@ exports.login = async (req, res) => {
 
     await pool.query(
       "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-      [user.id, refreshToken, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)]
+      [user.id, refreshToken, toMySQLDate(Date.now() + 7 * 24 * 60 * 60 * 1000)]
     );
 
     res.cookie("refreshToken", refreshToken, {
@@ -224,7 +231,7 @@ exports.googleLogin = async (req, res) => {
 
     await pool.query(
       "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-      [user.id, refreshToken, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)]
+      [user.id, refreshToken, toMySQLDate(Date.now() + 7 * 24 * 60 * 60 * 1000)]
     );
 
     res.cookie("refreshToken", refreshToken, {

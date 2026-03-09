@@ -27,14 +27,13 @@ export default function AuthPage() {
   };
 
   const handleRegister = async () => {
-    const errMsg = validate(); 
+    const errMsg = validate();
     if (errMsg) return setError(errMsg);
 
     try {
       setLoading(true); setError(""); setSuccess("");
-      const res = await axios.post(`${API}/register`, { email: form.email, password: form.password });
-      const { otp } = res.data;
-      setSuccess(`Registered! Your OTP is: ${otp}`);
+      await axios.post(`${API}/register`, { email: form.email, password: form.password });
+      setSuccess("Verify with OTP sent to your email");
       setMode("otp");
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
@@ -42,21 +41,20 @@ export default function AuthPage() {
   };
 
   const handleLogin = async () => {
-    const errMsg = validate(); 
+    const errMsg = validate();
     if (errMsg) return setError(errMsg);
 
     try {
       setLoading(true); setError(""); setSuccess("");
       const res = await axios.post(`${API}/login`, { email: form.email, password: form.password }, { withCredentials: true });
-
       localStorage.setItem("accessToken", res.data.accessToken);
       navigate("/dashboard");
     } catch (err) {
       const data = err.response?.data;
-      if (data?.otp && data?.email) {
-        // Account unverified, switch to OTP mode
+      // FIX 5: Check data?.email only — backend no longer sends otp field
+      if (data?.email) {
         setForm(f => ({ ...f, email: data.email, password: "" }));
-        setSuccess(`Account not verified. Your OTP is: ${data.otp}`);
+        setSuccess("Account not verified. OTP sent to your email.");
         setMode("otp");
       } else {
         setError(data?.message || "Login failed");
@@ -65,7 +63,7 @@ export default function AuthPage() {
   };
 
   const handleVerifyOtp = async () => {
-    const errMsg = validate(); 
+    const errMsg = validate();
     if (errMsg) return setError(errMsg);
 
     try {
@@ -91,7 +89,7 @@ export default function AuthPage() {
 
   // ------------------- Resend OTP -------------------
   const startResendTimer = () => {
-    setResendTimer(30); // 30 seconds cooldown
+    setResendTimer(30);
     const interval = setInterval(() => {
       setResendTimer(prev => {
         if (prev <= 1) { clearInterval(interval); return 0; }
