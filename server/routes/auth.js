@@ -8,5 +8,6 @@ router.post("/login", authController.login);
 router.post("/google", authController.googleLogin);
 router.post("/refresh", authController.refreshToken);
 router.post("/logout", authController.logout);
+router.post("/resend-otp", authController.resendOtp);
 
 module.exports = router;

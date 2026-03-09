@@ -51,11 +51,11 @@ exports.register = async (req, res) => {
 
     await pool.query(
       "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
-      [userId, "email_verify", otp, expires]
+      [userId, "email_verify", expires]
     );
 
     try {
-      // await sendOtpEmail(email, otp, "email_verify");
+      await sendOtpEmail(email, otp, "email_verify");
       return res.json({ message: "User registered. Verify OTP.", otp, userId });
     } catch (e) {
       console.error("Failed to send OTP email:", e);
@@ -97,7 +97,7 @@ exports.verifyOtp = async (req, res) => {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
     });
-
+    sendOtpEmail()
     res.json({ accessToken });
   } catch (err) {
     console.error(err);
@@ -105,6 +105,34 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
+// ---------------------- RESEND OTP ----------------------
+exports.resendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email required" });
+
+    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
+    if (!users.length) return res.status(404).json({ message: "User not found" });
+
+    const user = users[0];
+    if (user.is_email_verified) return res.status(400).json({ message: "Account already verified" });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 5 * 60 * 1000);
+
+    await pool.query(
+      "INSERT INTO otps (user_id, type, otp_code, expires_at) VALUES (?, ?, ?, ?)",
+      [user.id, "email_verify", otp, expires]
+    );
+
+    await sendOtpEmail(user.email, otp, "email_verify");
+
+    res.json({ message: "OTP resent", otp }); // optional: send otp for dev
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 // ---------------------- LOGIN ----------------------
 // ---------------------- LOGIN ----------------------
 exports.login = async (req, res) => {
@@ -133,11 +161,10 @@ exports.login = async (req, res) => {
       );
 
       // Optionally send email
-      // await sendOtpEmail(user.email, otp, "email_verify");
+      await sendOtpEmail(user.email, otp, "email_verify");
 
       return res.status(400).json({
         message: "Account not verified. OTP sent.",
-        otp,
         email: user.email,
       });
     }

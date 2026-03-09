@@ -1,13 +1,42 @@
 // utils/mailer.js
 const nodemailer = require("nodemailer");
+const { google } = require("googleapis");
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,   // your Gmail address
-    pass: process.env.GMAIL_PASS,   // Gmail App Password (not your real password)
-  },
-});
+const isProd = process.env.ENV === "prod"; // check environment
+
+let transporter;
+
+if (isProd) {
+  // Production: Gmail OAuth
+  const OAuth2 = google.auth.OAuth2;
+  const oauth2Client = new OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+  );
+  oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      type: "OAuth2",
+      user: process.env.GMAIL_USER,
+      clientId: process.env.GMAIL_CLIENT_ID,
+      clientSecret: process.env.GMAIL_CLIENT_SECRET,
+      refreshToken: process.env.GMAIL_REFRESH_TOKEN,
+      accessToken: async () => (await oauth2Client.getAccessToken()).token,
+    },
+  });
+} else {
+  // Development / Local: Gmail SMTP with App Password
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_PASS, // App Password
+    },
+  });
+}
 
 /**
  * Send an OTP email.
