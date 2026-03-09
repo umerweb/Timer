@@ -8,10 +8,11 @@ const router = express.Router();
 /* ─── GIF cache ───────────────────────────────────────────────────────────── */
 const gifCache  = new Map();
 const CACHE_TTL = 58_000;
-const STALE_AT  = 45_000;
+const STALE_AT  = 20_000; // was 45_000 — refresh earlier so cache is always hot
 
 function renderGifBuffer(p) {
   return new Promise((resolve, reject) => {
+    // Use smaller canvas if caller didn't explicitly set size
     const W = p.width, H = p.height;
     const encoder = new GIFEncoder(W, H);
     const chunks  = [];
@@ -22,12 +23,12 @@ function renderGifBuffer(p) {
     encoder.start();
     encoder.setRepeat(0);
     encoder.setDelay(1000);
-    encoder.setQuality(10);
+    encoder.setQuality(20);   // was 10 — higher = faster encode, negligible visual diff
     const canvas = createCanvas(W, H);
     const ctx    = canvas.getContext("2d");
     const base   = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
     const total  = base.days * 86400 + base.hours * 3600 + base.minutes * 60 + base.seconds;
-    for (let s = 0; s < 10; s++) {
+    for (let s = 0; s < 6; s++) {  // was 10 — 6 frames is plenty for a 1s-tick countdown
       const rem = Math.max(0, total - s);
       drawFrame(ctx, W, H, {
         days:    Math.floor(rem / 86400),
@@ -46,6 +47,7 @@ async function serveGif(res, cacheKey, p) {
   const cached = gifCache.get(cacheKey);
   if (cached) {
     const age = Date.now() - cached.ts;
+    // Background re-render when stale so next request is instant
     if (age > STALE_AT) {
       renderGifBuffer(p)
         .then(buf => gifCache.set(cacheKey, { buf, ts: Date.now() }))
@@ -128,9 +130,9 @@ function parseParams(q) {
     showHours:    q.hours   !== "0",
     showMinutes:  q.minutes !== "0",
     showSeconds:  q.seconds !== "0",
-    visualStyle:  q.visualStyle || "default",   // ← new
-    width:        parseInt(q.width)  || 600,
-    height:       parseInt(q.height) || 160,
+    visualStyle:  q.visualStyle || "default",
+    width:        Math.min(parseInt(q.width)  || 400, 600),  // default 400 (was 600) — smaller = faster
+    height:       Math.min(parseInt(q.height) || 120, 200),  // default 120 (was 160) — smaller = faster
   };
 }
 
@@ -148,17 +150,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/* ─── Visual Style definitions (canvas port of frontend VISUAL_STYLES) ────
- *
- * Each style returns drawing instructions for:
- *   drawWrapper  – called before any boxes (background + outer border)
- *   drawBox      – called per number box
- *   drawLabel    – called per unit label (DAYS/HRS/MIN/SEC)
- *   drawSep      – called per ":" separator
- *   drawTitle    – called for the title row
- *
- * All functions receive (ctx, params…) and mutate ctx directly.
- * ─────────────────────────────────────────────────────────────────────────── */
+/* ─── Visual Style definitions ────────────────────────────────────────────── */
 const CANVAS_STYLES = {
 
   // 1. Default — flat dark boxes, subtle glow
@@ -172,13 +164,10 @@ const CANVAS_STYLES = {
       }
     },
     drawBox(ctx, x, y, bW, bH, br, p) {
-      // shadow
       ctx.fillStyle = "rgba(0,0,0,0.3)";
       roundRect(ctx, x + 3, y + 3, bW, bH, br); ctx.fill();
-      // fill
       ctx.fillStyle = p.box;
       roundRect(ctx, x, y, bW, bH, br); ctx.fill();
-      // border glow
       ctx.strokeStyle = p.accent + "66"; ctx.lineWidth = 2;
       roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
     },
@@ -196,7 +185,6 @@ const CANVAS_STYLES = {
         ctx.fillStyle = p.bg;
         ctx.fillRect(0, 0, W, H);
       }
-      // outer glow border
       ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
       ctx.shadowColor = p.accent; ctx.shadowBlur  = 18;
       roundRect(ctx, 2, 2, W - 4, H - 4, p.borderRadius);
@@ -204,21 +192,19 @@ const CANVAS_STYLES = {
       ctx.shadowBlur = 0;
     },
     drawBox(ctx, x, y, bW, bH, br, p) {
-      // semi-transparent fill
       ctx.fillStyle = p.accent + "18";
       roundRect(ctx, x, y, bW, bH, br); ctx.fill();
-      // glowing border
       ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
       ctx.shadowColor = p.accent; ctx.shadowBlur  = 10;
       roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
       ctx.shadowBlur  = 0;
     },
-    labelColor: (p) => p.accent,
-    labelAlpha: 0.85,
-    sepAlpha:   1,
-    sepColor:   (p) => p.accent,
-    numberColor:(p) => p.accent,   // override number colour
-    numberShadow:(ctx, p) => { ctx.shadowColor = p.accent; ctx.shadowBlur = 8; },
+    labelColor:   (p) => p.accent,
+    labelAlpha:   0.85,
+    sepAlpha:     1,
+    sepColor:     (p) => p.accent,
+    numberColor:  (p) => p.accent,
+    numberShadow: (ctx, p) => { ctx.shadowColor = p.accent; ctx.shadowBlur = 8; },
   },
 
   // 3. Minimal — no box, bottom border only
@@ -229,14 +215,12 @@ const CANVAS_STYLES = {
         ctx.fillStyle = p.bg;
         ctx.fillRect(0, 0, W, H);
       }
-      // bottom border line
       ctx.strokeStyle = p.accent + "55"; ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(20, H - 2); ctx.lineTo(W - 20, H - 2);
       ctx.stroke();
     },
     drawBox(ctx, x, y, bW, bH, br, p) {
-      // no background — just bottom border
       ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x, y + bH); ctx.lineTo(x + bW, y + bH);
@@ -253,28 +237,22 @@ const CANVAS_STYLES = {
     drawWrapper(ctx, W, H, p) {
       ctx.clearRect(0, 0, W, H);
       if (!p.transparent) {
-        // slightly transparent bg
         ctx.globalAlpha = 0.85;
         ctx.fillStyle   = p.bg;
         ctx.fillRect(0, 0, W, H);
         ctx.globalAlpha = 1;
       }
-      // thin soft border
       ctx.strokeStyle = p.textColor + "18"; ctx.lineWidth = 1;
       roundRect(ctx, 1, 1, W - 2, H - 2, p.borderRadius);
       ctx.stroke();
     },
     drawBox(ctx, x, y, bW, bH, br, p) {
-      // glass fill
       ctx.fillStyle   = p.textColor + "0d";
       roundRect(ctx, x, y, bW, bH, br); ctx.fill();
-      // inner highlight top edge
       ctx.strokeStyle = p.textColor + "22"; ctx.lineWidth = 1;
       roundRect(ctx, x, y, bW, bH, br); ctx.stroke();
-      // soft drop shadow
       ctx.fillStyle   = "rgba(0,0,0,0.15)";
       roundRect(ctx, x + 2, y + 3, bW, bH, br); ctx.fill();
-      // re-draw box on top of shadow
       ctx.fillStyle   = p.textColor + "0d";
       roundRect(ctx, x, y, bW, bH, br); ctx.fill();
     },
@@ -292,21 +270,16 @@ const CANVAS_STYLES = {
         ctx.fillStyle = p.bg;
         ctx.fillRect(0, 0, W, H);
       }
-      // thick outer border
       ctx.strokeStyle = p.accent; ctx.lineWidth = 4;
       ctx.strokeRect(4, 4, W - 8, H - 8);
-      // hard drop shadow offset
       ctx.strokeStyle = p.accent + "88"; ctx.lineWidth = 4;
       ctx.strokeRect(8, 8, W - 8, H - 8);
     },
     drawBox(ctx, x, y, bW, bH, _br, p) {
-      // hard shadow
       ctx.fillStyle = p.accent + "88";
       ctx.fillRect(x + 3, y + 3, bW, bH);
-      // flat fill, no radius
       ctx.fillStyle = p.box;
       ctx.fillRect(x, y, bW, bH);
-      // thick border
       ctx.strokeStyle = p.accent; ctx.lineWidth = 3;
       ctx.strokeRect(x, y, bW, bH);
     },
@@ -314,7 +287,7 @@ const CANVAS_STYLES = {
     labelAlpha: 1,
     sepAlpha:   1,
     sepColor:   (p) => p.accent,
-    boxRadius:  0,   // override borderRadius to 0
+    boxRadius:  0,
   },
 
   // 6. Soft — pill boxes, gradient fill, large radius
@@ -325,7 +298,6 @@ const CANVAS_STYLES = {
         ctx.fillStyle = p.bg;
         ctx.fillRect(0, 0, W, H);
       }
-      // soft glow border
       ctx.strokeStyle = p.accent + "33"; ctx.lineWidth = 1;
       ctx.shadowColor = p.accent + "22"; ctx.shadowBlur  = 24;
       roundRect(ctx, 1, 1, W - 2, H - 2, 28);
@@ -333,15 +305,12 @@ const CANVAS_STYLES = {
       ctx.shadowBlur = 0;
     },
     drawBox(ctx, x, y, bW, bH, _br, p) {
-      const br = bH / 2; // pill shape
-      // gradient fill
+      const br = bH / 2;
       const grad = ctx.createLinearGradient(x, y, x + bW, y + bH);
       grad.addColorStop(0, p.box);
       grad.addColorStop(1, p.accent + "66");
-      // soft shadow
       ctx.fillStyle = p.accent + "33";
       roundRect(ctx, x + 2, y + 4, bW, bH, br); ctx.fill();
-      // box
       ctx.fillStyle = grad;
       roundRect(ctx, x, y, bW, bH, br); ctx.fill();
     },
@@ -357,7 +326,6 @@ const CANVAS_STYLES = {
 function drawFrame(ctx, W, H, timeObj, p) {
   const style = CANVAS_STYLES[p.visualStyle] || CANVAS_STYLES.default;
 
-  // 1. Wrapper / background
   style.drawWrapper(ctx, W, H, p);
 
   const units = [
@@ -384,12 +352,11 @@ function drawFrame(ctx, W, H, timeObj, p) {
   const sx       = (W - totalW) / 2;
   const sy       = Math.max(titleH + 8, (H - totalH) / 2 + titleH);
 
-  // Use style's boxRadius override if present (e.g. retro=0, soft=pill)
   const br = style.boxRadius !== undefined
     ? style.boxRadius
     : Math.min(p.borderRadius, Math.floor(innerBoxH / 4));
 
-  // 2. Title
+  // Title
   if (p.title) {
     ctx.fillStyle    = style.titleColor ? style.titleColor(p) : p.textColor;
     ctx.globalAlpha  = style.titleAlpha !== undefined ? style.titleAlpha : 0.9;
@@ -402,7 +369,7 @@ function drawFrame(ctx, W, H, timeObj, p) {
     ctx.globalAlpha = 1;
   }
 
-  // 3. Expired
+  // Expired
   if (timeObj.done) {
     ctx.fillStyle    = p.accent;
     ctx.font         = `bold ${Math.round(fs * 0.7)}px monospace`;
@@ -412,17 +379,15 @@ function drawFrame(ctx, W, H, timeObj, p) {
     return;
   }
 
-  // 4. Boxes, numbers, labels, separators
+  // Boxes, numbers, labels, separators
   units.forEach(({ lbl, val }, i) => {
     const x = sx + i * (boxW + gap);
     const y = sy;
 
-    // Draw box background via style
     ctx.save();
     style.drawBox(ctx, x, y, boxW, innerBoxH, br, p);
     ctx.restore();
 
-    // Number
     const numColor = style.numberColor ? style.numberColor(p) : p.textColor;
     ctx.fillStyle    = numColor;
     ctx.globalAlpha  = 1;
@@ -433,7 +398,6 @@ function drawFrame(ctx, W, H, timeObj, p) {
     ctx.fillText(val, x + boxW / 2, y + innerBoxH / 2);
     ctx.shadowBlur  = 0;
 
-    // Label
     ctx.fillStyle    = style.labelColor(p);
     ctx.globalAlpha  = style.labelAlpha !== undefined ? style.labelAlpha : 0.55;
     ctx.font         = `bold ${Math.round(fs * 0.25)}px monospace`;
@@ -442,7 +406,6 @@ function drawFrame(ctx, W, H, timeObj, p) {
     ctx.fillText(lbl, x + boxW / 2, y + innerBoxH + 5);
     ctx.globalAlpha  = 1;
 
-    // Separator
     if (i < units.length - 1) {
       ctx.fillStyle    = style.sepColor(p);
       ctx.globalAlpha  = style.sepAlpha !== undefined ? style.sepAlpha : 0.65;
@@ -510,8 +473,6 @@ router.get("/embed", (req, res) => {
 
 /* ─── Embed HTML builder ─────────────────────────────────────────────────── */
 function buildEmbedHtml(p, units, lblMap, resolvedTarget) {
-  // Map visualStyle → CSS overrides for the embed iframe
-  // Mirrors the frontend VISUAL_STYLES exactly
   const embedStyleMap = {
     default: {
       wrap:  `border:2px solid ${p.accent}44; box-shadow:0 4px 20px ${p.accent}18;`,
@@ -670,7 +631,7 @@ function buildParamsFromRow(row) {
     hours:        cfg.showHours    === false ? "0" : "1",
     minutes:      cfg.showMinutes  === false ? "0" : "1",
     seconds:      cfg.showSeconds  === false ? "0" : "1",
-    visualStyle:  cfg.visualStyle  || "default",   // ← pass through
+    visualStyle:  cfg.visualStyle  || "default",
   });
 }
 
