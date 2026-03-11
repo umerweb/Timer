@@ -14,8 +14,6 @@ function timerGifUrl(id)   { return `${API}/t/${id}/gif`; }
 function timerEmbedUrl(id) { return `${API}/t/${id}/embed`; }
 function timerShareUrl(id) { return `${window.location.origin}/t/${id}`; }
 
-// Merge stored cfg with safe defaults — ensures every field is always present
-// so controlled inputs never flip to uncontrolled.
 const CFG_DEFAULTS = {
   bg:           "#0f0f1a",
   box:          "#1e1b4b",
@@ -36,10 +34,8 @@ function mergeCfg(incoming) {
   return { ...CFG_DEFAULTS, ...(DEFAULT_TIMER_CFG || {}), ...(incoming || {}) };
 }
 
-// ─── EditorScreen ─────────────────────────────────────────────────────────────
 export default function EditorScreen({ user, serverOnline, initialTimer, onSaved, onBack, onLogout }) {
 
-  // ── Editor state — initialised from prop, then fully owned by this component
   const [tab,      setTab]      = useState("timer");
   const [target,   setTarget]   = useState(initialTimer?.target   || defaultTarget());
   const [timezone, setTimezone] = useState(initialTimer?.timezone || "UTC");
@@ -47,7 +43,6 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
   const [egHours,  setEgHours]  = useState(initialTimer?.egHours  || 48);
   const [cfg,      setCfg]      = useState(() => mergeCfg(initialTimer?.cfg));
 
-  // ── Persistence state
   const [timerName,  setTimerName]  = useState(initialTimer?.name ?? "");
   const [savedId,    setSavedId]    = useState(initialTimer?.id   ?? null);
   const [saveRev,    setSaveRev]    = useState(0);
@@ -56,11 +51,6 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
   const [pendingTab, setPendingTab] = useState(null);
   const [copied,     setCopied]     = useState("");
 
-  // ── Re-sync ALL editor fields when initialTimer identity changes ──────────
-  // This fires when TimerEditPage calls setTimer(saved) after a successful
-  // PUT — ensuring the editor always reflects exactly what the DB has.
-  // We use initialTimer?.id as the dependency: it only changes when we
-  // navigate to a genuinely different timer (not just re-renders).
   useEffect(() => {
     if (!initialTimer) return;
     setTarget(initialTimer.target   || defaultTarget());
@@ -75,16 +65,13 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
   const sc      = useCallback((k, v) => setCfg((c) => ({ ...c, [k]: v })), []);
   const countUp = mode === "countup";
 
-  // ── URLs ──────────────────────────────────────────────────────────────────
   const previewParams   = buildParams(cfg, target, mode, egHours, timezone);
   const previewEmbedUrl = `${API}/api/timer/embed?${previewParams}`;
 
-  // ?v=saveRev busts browser cache after every save so preview refreshes instantly
   const shortGifUrl   = savedId ? `${timerGifUrl(savedId)}?v=${saveRev}`   : null;
   const shortEmbedUrl = savedId ? `${timerEmbedUrl(savedId)}?v=${saveRev}` : null;
   const shareLink     = savedId ? timerShareUrl(savedId)                   : null;
 
-  // Code snippets use the clean URL (no ?v=) — canonical for emails/embeds
   const cleanGifUrl   = savedId ? timerGifUrl(savedId)   : null;
   const cleanEmbedUrl = savedId ? timerEmbedUrl(savedId) : null;
 
@@ -92,7 +79,6 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
     ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=${COLORS.accent.replace("#", "")}&qzone=2`
     : null;
 
-  // ── Email / embed snippets ────────────────────────────────────────────────
   const imgTag = cleanGifUrl
     ? `<img src="${cleanGifUrl}"\n  width="600"\n  style="display:block;width:100%;max-width:600px;height:auto;border:0;"\n  alt="${cfg.title || "Countdown Timer"}">`
     : "";
@@ -121,10 +107,8 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
     setTimeout(() => setCopied(""), 2200);
   }, []);
 
-  // Always reads live state — never touches initialTimer prop
   const currentPayload = (name) => ({ name, target, mode, egHours, timezone, cfg });
 
-  // ── Save handlers ─────────────────────────────────────────────────────────
   const handleSaveNew = async (name) => {
     setSaveModal(false);
     setSaveStatus("saving");
@@ -178,10 +162,8 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
     if (!savedId) return;
     setSaveStatus("saving");
     try {
-      // Build payload from live state right now — never reads initialTimer
       const payload = currentPayload(timerName);
       console.log("[EditorScreen] PUT payload:", JSON.stringify(payload, null, 2));
-
       const res = await apiFetch(`${API}/api/timers/${savedId}`, {
         method: "PUT",
         body: JSON.stringify(payload),
@@ -267,10 +249,16 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
           style={{ background: "linear-gradient(135deg,#eef2ff 0%,#f1f5f9 50%,#eff6ff 100%)" }}>
           <div className="absolute inset-0 opacity-25 pointer-events-none"
             style={{ backgroundImage: "radial-gradient(circle,#c7d2fe 1px,transparent 1px)", backgroundSize: "28px 28px" }} />
-          <div className="relative z-10 text-center">
+          <div className="relative z-10 text-center w-full max-w-[560px]">
             <div className="text-[var(--color-faint)] text-[10px] tracking-[0.25em] uppercase font-semibold mb-[18px]">LIVE PREVIEW</div>
-            <div className="bg-white rounded-2xl p-6 inline-block shadow-[var(--shadow-xl)]">
-              <LiveClock target={target} mode={mode} countUp={countUp} egHours={egHours} cfg={cfg} />
+            <div className="rounded-2xl overflow-hidden shadow-[var(--shadow-xl)]"
+              style={{ height: 140, background: cfg.bg }}>
+              <iframe
+                key={previewParams}
+                src={previewEmbedUrl}
+                className="w-full h-full border-none block"
+                title="Timer Preview"
+              />
             </div>
             {mode === "evergreen" && (
               <div className="text-[var(--color-accent)] text-[11px] mt-3 font-medium">
@@ -385,6 +373,10 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
                                 fontSize: 11, fontWeight: 700,
                                 padding: "2px 5px", minWidth: 20, textAlign: "center",
                                 lineHeight: 1,
+                                // FIX: explicit base color+bg so styles that don't
+                                // override color (e.g. "default") still render correctly
+                                color: cfg.text,
+                                background: cfg.box,
                                 ...vs.box(0.45, cfg),
                               }}>{v}</div>
                               {i === 0 && (
@@ -393,8 +385,10 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
                             </div>
                           ))}
                         </div>
+                        {/* FIX: was {vs.label} which rendered the style function.
+                            Now uses vs.name (the display string) with key as fallback. */}
                         <div className={`text-[10px] font-semibold ${active ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
-                          {vs.label}
+                          {vs.name ?? key}
                         </div>
                       </div>
                     );

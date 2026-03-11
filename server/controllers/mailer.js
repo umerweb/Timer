@@ -1,30 +1,19 @@
-// utils/mailer.js
 const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
 
-const isProd = process.env.ENV === "prod"; // check environment
+const isProd = process.env.ENV === "prod";
 
 let transporter;
 
 if (isProd) {
-  // Production: Gmail OAuth
-  const OAuth2 = google.auth.OAuth2;
-  const oauth2Client = new OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    "https://developers.google.com/oauthplayground"
-  );
-  oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
-
+  // Production: Hostinger SMTP
   transporter = nodemailer.createTransport({
-    service: "gmail",
+    host:   process.env.SMTP_HOST,   // smtp.hostinger.com
+    port:   Number(process.env.SMTP_PORT) || 465,
+    secure: process.env.SMTP_SECURE !== "false", // true for 465
     auth: {
-      type: "OAuth2",
-      user: process.env.GMAIL_USER,
-      clientId: process.env.GMAIL_CLIENT_ID,
-      clientSecret: process.env.GMAIL_CLIENT_SECRET,
-      refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-      accessToken: async () => (await oauth2Client.getAccessToken()).token,
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
     },
   });
 } else {
@@ -33,23 +22,15 @@ if (isProd) {
     service: "gmail",
     auth: {
       user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_PASS, // App Password
+      pass: process.env.GMAIL_PASS,
     },
   });
 }
 
-/**
- * Send an OTP email.
- * @param {string} to      - recipient email
- * @param {string} otp     - the 6-digit code
- * @param {"email_verify"|"password_reset"} type
- */
 async function sendOtpEmail(to, otp, type = "email_verify") {
   const isReset = type === "password_reset";
 
-  const subject = isReset
-    ? "Your password reset code"
-    : "Verify your email";
+  const subject = isReset ? "Your password reset code" : "Verify your email";
 
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#f8fafc;border-radius:12px;">
@@ -72,12 +53,11 @@ async function sendOtpEmail(to, otp, type = "email_verify") {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"Timerly" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
+  const from = isProd
+    ? `"Timerly" <${process.env.SMTP_USER}>`
+    : `"Timerly" <${process.env.GMAIL_USER}>`;
+
+  await transporter.sendMail({ from, to, subject, html });
 }
 
 module.exports = { sendOtpEmail };

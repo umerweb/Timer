@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 3001;
 
 const allowedOrigins = [
   "https://timer-front-xiwi.onrender.com",
-  "http://localhost:5173"
+  "http://localhost:5173",
+  "https://timer.nordpak.org"
 ];
 
 app.use(cors({

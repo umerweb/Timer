@@ -46,6 +46,7 @@ export function buildParams(cfg, target, mode, egHours, timezone) {
     hours:        cfg.showHours   ? "1" : "0",
     minutes:      cfg.showMinutes ? "1" : "0",
     seconds:      cfg.showSeconds ? "1" : "0",
+    visualStyle:  cfg.visualStyle || "default", 
   }).toString();
 }
 
