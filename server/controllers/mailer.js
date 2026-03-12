@@ -1,23 +1,16 @@
 const nodemailer = require("nodemailer");
-const { google } = require("googleapis");
+const { Resend } = require("resend");
 
 const isProd = process.env.ENV === "prod";
 
 let transporter;
+let resend;
 
 if (isProd) {
-  // Production: Hostinger SMTP
-  transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,   // smtp.hostinger.com
-    port:   Number(process.env.SMTP_PORT) || 465,
-    secure: process.env.SMTP_SECURE !== "false", // true for 465
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  // Production: use Resend API
+  resend = new Resend(process.env.RESEND);
 } else {
-  // Development / Local: Gmail SMTP with App Password
+  // Development / Local: Gmail SMTP with Nodemailer
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -38,9 +31,11 @@ async function sendOtpEmail(to, otp, type = "email_verify") {
         ${isReset ? "🔑 Reset your password" : "✉️ Verify your email"}
       </h2>
       <p style="color:#64748b;margin:0 0 24px;font-size:14px;">
-        ${isReset
-          ? "Use the code below to reset your password. It expires in 5 minutes."
-          : "Use the code below to verify your email address. It expires in 5 minutes."}
+        ${
+          isReset
+            ? "Use the code below to reset your password. It expires in 5 minutes."
+            : "Use the code below to verify your email address. It expires in 5 minutes."
+        }
       </p>
       <div style="background:#1e1b4b;color:#e0e7ff;font-size:36px;font-weight:700;
                   letter-spacing:10px;text-align:center;padding:20px;border-radius:10px;
@@ -53,11 +48,19 @@ async function sendOtpEmail(to, otp, type = "email_verify") {
     </div>
   `;
 
-  const from = isProd
-    ? `"Timerly" <${process.env.SMTP_USER}>`
-    : `"Timerly" <${process.env.GMAIL_USER}>`;
-
-  await transporter.sendMail({ from, to, subject, html });
+  if (isProd) {
+    // Send email using Resend in production
+    await resend.emails.send({
+      from: "Timerly <onboarding@resend.dev>", // replace with verified domain for production
+      to: [to],
+      subject,
+      html,
+    });
+  } else {
+    // Send email using Nodemailer in dev
+    const from = `"Timerly" <${process.env.GMAIL_USER}>`;
+    await transporter.sendMail({ from, to, subject, html });
+  }
 }
 
 module.exports = { sendOtpEmail };

@@ -1,4 +1,4 @@
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL || 'https://lightblue-gorilla-565179.hostingersite.com';
 
 export { API };
 

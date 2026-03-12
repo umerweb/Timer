@@ -33,6 +33,7 @@
     "passport": "^0.6.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
+    "resend": "^6.9.3",
     "sib-api-v3-sdk": "^8.5.0"
   },
   "devDependencies": {
