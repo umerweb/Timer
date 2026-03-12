@@ -51,7 +51,7 @@ async function sendOtpEmail(to, otp, type = "email_verify") {
   if (isProd) {
     // Send email using Resend in production
     await resend.emails.send({
-      from: "Timerly <onboarding@resend.dev>", // replace with verified domain for production
+      from: "Timerly <onboarding@service.nordpak.org>",
       to: [to],
       subject,
       html,
