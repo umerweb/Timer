@@ -38,6 +38,7 @@ app.use("/api/timers", timersRoutes);
 /* ─── health ─────────────────────────────────────────────────────────────── */
 app.get("/health", (_, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+
 /* ─── start ──────────────────────────────────────────────────────────────── */
 app.listen(PORT, () => {
   console.log(`\n✅ Server running on port ${PORT}`);

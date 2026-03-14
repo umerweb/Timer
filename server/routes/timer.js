@@ -17,7 +17,7 @@ const {
 const FONTS_DIR = path.join(__dirname, "../fonts");
 TIMER_FONTS.forEach(({ name, file }) => {
   try {
-    registerFont(path.join(FONTS_DIR, file), { family: name });
+    registerFont(path.join(FONTS_DIR, file), { family: name, weight: "bold" });
   } catch (e) {
     console.warn(`⚠ Could not register font "${name}" (${file}):`, e.message);
   }
@@ -183,7 +183,7 @@ function drawFrame(ctx, W, H, timeObj, p) {
   // Title
   if (p.title) {
     ctx.fillStyle = p.textColor; ctx.globalAlpha = 0.9;
-    ctx.font = `bold ${Math.round(fs * 0.3)}px "${p.font}", monospace`;
+    ctx.font = `bold ${Math.round(fs * 0.3)}px "${p.font}", ${p.font}`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(p.title.toUpperCase(), W / 2, sy - titleH / 2 - 2);
     ctx.globalAlpha = 1;
@@ -192,7 +192,7 @@ function drawFrame(ctx, W, H, timeObj, p) {
   // Expired
   if (timeObj.done) {
     ctx.fillStyle = p.accent;
-    ctx.font = `bold ${Math.round(fs * 0.7)}px "${p.font}", monospace`;
+    ctx.font = `bold ${Math.round(fs * 0.7)}px "${p.font}", ${p.font}`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("EXPIRED", W / 2, H / 2);
     return;
@@ -205,13 +205,13 @@ function drawFrame(ctx, W, H, timeObj, p) {
 
     // Number
     ctx.fillStyle = style.numberColor(p); ctx.globalAlpha = 1;
-    ctx.font = `bold ${fs}px "${p.font}", monospace`;
+    ctx.font = `bold ${fs}px "${p.font}", ${p.font}`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(val, x + boxW / 2, y + innerBoxH / 2);
 
     // Label
     ctx.fillStyle = style.labelColor(p); ctx.globalAlpha = style.labelAlpha;
-    ctx.font = `bold ${ls}px "${p.font}", monospace`;
+    ctx.font = `bold ${ls}px "${p.font}", ${p.font}`;
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     ctx.fillText(lbl, x + boxW / 2, y + innerBoxH + 4);
     ctx.globalAlpha = 1;
@@ -219,7 +219,7 @@ function drawFrame(ctx, W, H, timeObj, p) {
     // Separator
     if (i < units.length - 1) {
       ctx.fillStyle = style.sepColor(p); ctx.globalAlpha = style.sepAlpha;
-      ctx.font = `bold ${Math.round(fs * 0.7)}px "${p.font}", monospace`;
+      ctx.font = `bold ${Math.round(fs * 0.7)}px "${p.font}", ${p.font}`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(":", x + boxW + gap / 2, y + innerBoxH / 2 - Math.round(fs * 0.08));
       ctx.globalAlpha = 1;
