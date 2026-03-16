@@ -238,8 +238,8 @@ function parseParams(q) {
     showMinutes:  q.minutes !== "0",
     showSeconds:  q.seconds !== "0",
     visualStyle:  q.visualStyle || D.visualStyle,
-    width:        Math.min(parseInt(q.width)  || 750, 750),
-    height:       Math.min(parseInt(q.height) || 195, 195),
+    width:        Math.min(parseInt(q.width)  || 600, 600),
+    height:       Math.min(parseInt(q.height) || 150, 150),
   };
 }
 
@@ -462,8 +462,10 @@ router.get("/theme", (_req, res) => {
 
 /* ─── Routes ─────────────────────────────────────────────────────────────── */
 router.get("/gif", async (req, res) => {
+  const start = Date.now();
   try {
     await serveGif(res, req.url, parseParams(req.query));
+       console.log("GIF request time:", Date.now() - start, "ms");
   } catch (err) {
     console.error("GIF error:", err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
@@ -533,21 +535,39 @@ function buildParamsFromRow(row) {
 
 /* ─── Short URL routes ────────────────────────────────────────────────────── */
 router.get("/:id/gif", async (req, res) => {
+  const start = Date.now();
+
   try {
     const { Timer } = require("../db");
+
     const row = await Timer.findById(req.params.id);
     if (!row) return res.status(404).json({ error: "Timer not found" });
-    await serveGif(res, req.params.id, buildParamsFromRow(row));
+
+    console.log("DB fetch:", Date.now() - start, "ms");
+
+    const p = buildParamsFromRow(row);
+
+    const beforeRender = Date.now();
+
+    await serveGif(res, req.params.id, p);
+
+    console.log(
+      "Total GIF request:",
+      Date.now() - start,
+      "ms | render:",
+      Date.now() - beforeRender,
+      "ms"
+    );
+
   } catch (err) {
     console.error("Short GIF error:", err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
-
 router.get("/:id/embed", async (req, res) => {
   try {
     const { Timer } = require("../db");
-    const row = await Timer.findById(req.params.id);
+    const row = await Timer.findById(req.params.id).lean();
     if (!row) return res.status(404).json({ error: "Timer not found" });
     const p      = buildParamsFromRow(row);
     const units  = [

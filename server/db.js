@@ -52,7 +52,7 @@ const otpSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
-userSchema.index({ email: 1 }, { unique: true });
+//userSchema.index({ email: 1 }, { unique: true });
 timerSchema.index({ userId: 1, updatedAt: -1 });
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });           // auto-delete expired OTPs
 refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // auto-delete expired tokens
