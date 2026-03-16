@@ -1,26 +1,21 @@
 /**
  * gifWorker.js  —  runs as a forked child process
  *
- * Communication:
- *   parent → child : process.send({ p, timerFonts })
- *   child  → parent: process.send({ buf: <base64 string> })
- *                 or process.send({ error: <message> })
- *
- * Using child_process.fork instead of worker_threads because `canvas`
- * is a native addon that can fail to load inside worker_threads on some
- * Node / glibc combos.  A forked child process gets its own clean V8 +
- * native module loader, so there is no ABI mismatch.
+ * Uses gif-encoder-2 with optimizer (delta encoding) for small file sizes.
+ * IMPORTANT: when useOptimizer=true, totalFrames MUST be passed as 5th arg
+ * otherwise the encoder never finalizes and the GIF never resolves.
  */
 
 "use strict";
 
 const { createCanvas, registerFont } = require("canvas");
-const GIFEncoder  = require("gifencoder");
+const GIFEncoder  = require("gif-encoder-2");
 const { fromZonedTime } = require("date-fns-tz");
 const path        = require("path");
 const { STYLE_DEFS } = require("../timerTheme");
 
 const FONTS_DIR = path.join(__dirname, "../fonts");
+const FRAMES    = 60;  // full 60-second loop
 
 /* ─── Receive one job from the parent, render, reply, exit ───────────────── */
 process.once("message", ({ p, timerFonts }) => {
@@ -179,79 +174,74 @@ function drawNumbersOnly(ctx, timeObj, layout, p) {
   });
 }
 
+/* ─── Main render ─────────────────────────────────────────────────────────── */
 function renderGifBuffer(p) {
   return new Promise((resolve, reject) => {
-    // LW/LH = logical (unscaled) size — used for layout calculations & all draw calls
-    // CW/CH = physical canvas size   — used for createCanvas, GIFEncoder, getImageData
-    const SCALE = 1.3;
-    const LW = p.width;
-    const LH = p.height;
-    const CW = Math.round(LW * SCALE);
-    const CH = Math.round(LH * SCALE);
+    try {
+      const SCALE = 1.3;
+      const LW = p.width;
+      const LH = p.height;
+      const CW = Math.round(LW * SCALE);
+      const CH = Math.round(LH * SCALE);
 
-    const encoder = new GIFEncoder(CW, CH);
-    const chunks  = [];
+      // CRITICAL: pass FRAMES as 5th arg when useOptimizer=true
+      // Without totalFrames the optimizer never flushes and getData() returns empty
+      const encoder = new GIFEncoder(CW, CH, "neuquant", true, FRAMES);
+      encoder.setDelay(1000);
+      encoder.setRepeat(0);
+      encoder.setQuality(15);
+      encoder.start();
 
-    encoder
-      .createReadStream()
-      .on("data",  (c)   => chunks.push(c))
-      .on("end",   ()    => resolve(Buffer.concat(chunks)))
-      .on("error", reject);
+      const canvas = createCanvas(CW, CH);
+      const ctx    = canvas.getContext("2d");
+      ctx.scale(SCALE, SCALE);
 
-    encoder.start();
-    encoder.setRepeat(0);
-    encoder.setDelay(1000);
-    encoder.setQuality(15);
+      const base  = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
+      const total = base.days * 86400 + base.hours * 3600 + base.minutes * 60 + base.seconds;
 
-    // Physical canvas is CW×CH, but ctx.scale makes all draw calls use logical coords
-    const canvas = createCanvas(CW, CH);
-    const ctx    = canvas.getContext("2d");
-    ctx.scale(SCALE, SCALE);
+      const layout = computeLayout(LW, LH, p);
 
-    const base  = calcTime(p.target, p.timezone, p.mode, p.countUp, p.egHours);
-    const total = base.days * 86400 + base.hours * 3600 + base.minutes * 60 + base.seconds;
-
-    // CRITICAL: layout always uses logical dimensions (LW/LH), never scaled
-    const layout = computeLayout(LW, LH, p);
-
-    if (!layout) {
-      (STYLE_DEFS[p.visualStyle] || STYLE_DEFS.flat).canvas.drawWrapper(ctx, LW, LH, p);
-      encoder.addFrame(ctx);
-      encoder.finish();
-      return;
-    }
-
-    // drawStaticLayer uses logical dimensions — ctx.scale handles upscaling
-    drawStaticLayer(ctx, LW, LH, layout, p);
-
-    // getImageData/putImageData always work in physical pixels (CW/CH)
-    const staticSnapshot = ctx.getImageData(0, 0, CW, CH);
-
-    for (let s = 0; s < 10; s++) {
-      const rem     = Math.max(0, total - s);
-      const timeObj = {
-        days:    Math.floor(rem / 86400),
-        hours:   Math.floor((rem % 86400) / 3600),
-        minutes: Math.floor((rem % 3600)  / 60),
-        seconds: rem % 60,
-        done:    rem === 0,
-      };
-
-      ctx.putImageData(staticSnapshot, 0, 0);
-
-      if (timeObj.done) {
-        ctx.fillStyle    = p.accent;
-        ctx.font         = layout.fonts.expired;
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("EXPIRED", LW / 2, LH / 2);  // logical coords — ctx is scaled
-      } else {
-        drawNumbersOnly(ctx, timeObj, layout, p);
+      if (!layout) {
+        (STYLE_DEFS[p.visualStyle] || STYLE_DEFS.flat).canvas.drawWrapper(ctx, LW, LH, p);
+        encoder.addFrame(ctx);
+        encoder.finish();
+        resolve(encoder.out.getData());
+        return;
       }
 
-      encoder.addFrame(ctx);
-    }
+      drawStaticLayer(ctx, LW, LH, layout, p);
+      const staticSnapshot = ctx.getImageData(0, 0, CW, CH);
 
-    encoder.finish();
+      for (let s = 0; s < FRAMES; s++) {
+        const rem     = Math.max(0, total - s);
+        const timeObj = {
+          days:    Math.floor(rem / 86400),
+          hours:   Math.floor((rem % 86400) / 3600),
+          minutes: Math.floor((rem % 3600)  / 60),
+          seconds: rem % 60,
+          done:    rem === 0,
+        };
+
+        ctx.putImageData(staticSnapshot, 0, 0);
+
+        if (timeObj.done) {
+          ctx.fillStyle    = p.accent;
+          ctx.font         = layout.fonts.expired;
+          ctx.textAlign    = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("EXPIRED", LW / 2, LH / 2);
+        } else {
+          drawNumbersOnly(ctx, timeObj, layout, p);
+        }
+
+        encoder.addFrame(ctx);
+      }
+
+      encoder.finish();
+      resolve(encoder.out.getData());
+
+    } catch (err) {
+      reject(err);
+    }
   });
 }
