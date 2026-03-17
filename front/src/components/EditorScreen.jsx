@@ -203,6 +203,7 @@ export default function EditorScreen({ user, serverOnline, initialTimer, onSaved
               { l:"Mode",     v:mode==="evergreen"?"Evergreen ♻":mode==="countup"?"Count Up ↑":"Countdown ↓" },
               { l:"Timezone", v:timezone.split("/").pop() },
               { l:"ID",       v:savedId?`#${savedId}`:"unsaved" },
+               { l:"Views",    v:savedId ? `👁 ${initialTimer?.views ?? 0}` : "—" }, 
             ].map((s) => (
               <div key={s.l} className="bg-white border border-[var(--color-border)] rounded-[9px] px-3.5 py-[7px] text-center shadow-[var(--shadow-sm)]">
                 <div className="text-[var(--color-faint)] text-[9px] uppercase tracking-[0.1em] font-semibold">{s.l}</div>

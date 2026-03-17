@@ -517,7 +517,10 @@ function buildParamsFromRow(row) {
     height:       D.height,
   });
 }
-
+function isInternalPreview(req) {
+  const referer = req.headers.referer || req.headers.origin || "";
+  return referer.startsWith(process.env.FRONTEND_URL || "http://localhost:5173");
+}
 /* ─── Short URL routes ────────────────────────────────────────────────────── */
 router.get("/:id/gif", async (req, res) => {
   const start = Date.now();
@@ -525,6 +528,9 @@ router.get("/:id/gif", async (req, res) => {
     const { Timer } = require("../db");
     const row = await Timer.findById(req.params.id).lean();
     if (!row) return res.status(404).json({ error: "Timer not found" });
+    if (!isInternalPreview(req)) {
+     Timer.updateOne({ _id: req.params.id }, { $inc: { views: 1 } }).catch(console.error);
+    }
     console.log("DB fetch:", Date.now() - start, "ms");
     await serveGif(res, req.params.id, buildParamsFromRow(row));
     console.log("Total GIF request:", Date.now() - start, "ms");
@@ -539,6 +545,9 @@ router.get("/:id/embed", async (req, res) => {
     const { Timer } = require("../db");
     const row = await Timer.findById(req.params.id).lean();
     if (!row) return res.status(404).json({ error: "Timer not found" });
+    if (!isInternalPreview(req)) {
+    Timer.updateOne({ _id: req.params.id }, { $inc: { views: 1 } }).catch(console.error);
+    }
     const p      = buildParamsFromRow(row);
     const units  = [
       p.showDays    && "days",

@@ -32,6 +32,7 @@ const timerSchema = new mongoose.Schema({
   timezone: { type: String, default: "UTC" },
   language: { type: String, default: "English" },
   cfg:      { type: mongoose.Schema.Types.Mixed, default: {} },
+  views:    { type: Number, default: 0 },
 }, { timestamps: true });
 
 const refreshTokenSchema = new mongoose.Schema({

@@ -40,6 +40,9 @@ function TimerGridCard({ timer, onEdit, onDelete }) {
                 hour: "2-digit", minute: "2-digit",
               })}
         </div>
+         <div className="text-[11px] text-[var(--color-faint)] mt-1.5 flex items-center gap-1">
+    👁 {timer.views ?? 0} view{(timer.views ?? 0) !== 1 ? "s" : ""}
+  </div>
       </div>
 
       {/* Actions */}

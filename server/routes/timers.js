@@ -49,6 +49,7 @@ function formatTimer(doc) {
     timezone:  doc.timezone || "UTC",
     language:  doc.language || "English",
     cfg:       normaliseCfg(doc.cfg),
+    views:     doc.views    || 0,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
