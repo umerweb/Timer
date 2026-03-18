@@ -6,6 +6,7 @@ require("dotenv").config();
 const authRoutes  = require("./routes/auth");
 const timerRoutes = require("./routes/timer");
 const timersRoutes = require("./routes/timers"); 
+const billingRoutes = require("./routes/billing"); 
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,9 @@ app.use(cors({
   },
   credentials: true
 }));
+
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }), billingRoutes);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -34,6 +38,7 @@ app.use("/api/auth",  authRoutes);
 app.use("/api/timer", timerRoutes);
 app.use("/t", timerRoutes); 
 app.use("/api/timers", timersRoutes);
+app.use("/api/billing", billingRoutes);
 
 /* ─── health ─────────────────────────────────────────────────────────────── */
 app.get("/health", (_, res) => res.json({ ok: true, time: new Date().toISOString() }));

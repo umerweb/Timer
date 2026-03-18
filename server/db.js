@@ -13,7 +13,9 @@ const userSchema = new mongoose.Schema({
   password:        String,
   isEmailVerified: { type: Boolean, default: false },
   role:            { type: String, default: "user" },
-  plan:            { type: String, default: "free" },
+  plan:            { type: String, default: null },
+  stripeCustomerId:     { type: String, default: null },     // ← ADD this
+  stripeSubscriptionId: { type: String, default: null },     // ← ADD this
   status:          { type: String, default: "active" },
   providers: [{
     provider:       String,
